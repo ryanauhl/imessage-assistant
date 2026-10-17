@@ -44,7 +44,8 @@ export function Composer({ chatId, replyTo, canReply, canType, onCancelReply, on
       notify((e as Error).message);
     } finally {
       setBusy(false);
-      ta.current?.focus();
+      // Refocus after React commits the state update (the element must not be disabled).
+      requestAnimationFrame(() => ta.current?.focus());
     }
   };
 
@@ -92,7 +93,6 @@ export function Composer({ chatId, replyTo, canReply, canType, onCancelReply, on
             }
             if (e.key === 'Escape') onCancelReply();
           }}
-          disabled={busy}
         />
         <button className="send" onClick={() => void submit()} disabled={busy || (!text.trim() && files.length === 0)} title="Send">
           {busy ? '…' : '↑'}

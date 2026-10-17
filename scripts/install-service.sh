@@ -11,11 +11,19 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 [ -f "$REPO/.env" ] || { echo "Create $REPO/.env first (copy .env.example)"; exit 1; }
 [ -f "$REPO/server/dist/index.js" ] || { echo "Run 'npm run build' first"; exit 1; }
 
-mkdir -p "$BIN_DIR" "$DATA_DIR/logs" "$HOME/Library/LaunchAgents"
+mkdir -p "$BIN_DIR" "$DATA_DIR/lib" "$DATA_DIR/logs" "$HOME/Library/LaunchAgents"
 SRC_NODE="$(readlink -f "$(command -v node)")"
 cp -f "$SRC_NODE" "$BIN_DIR/node"
 chmod +x "$BIN_DIR/node"
-echo "node copied to $BIN_DIR/node (grant Full Disk Access to THIS path)"
+# Homebrew's node is dynamically linked against @rpath/libnode.*.dylib (resolved via bin/../lib).
+# Copy it alongside so the private copy is self-contained; official Node tarballs don't need this.
+SRC_LIB="$(dirname "$SRC_NODE")/../lib"
+if ls "$SRC_LIB"/libnode.*.dylib >/dev/null 2>&1; then
+  rm -f "$DATA_DIR/lib"/libnode.*.dylib
+  cp -f "$SRC_LIB"/libnode.*.dylib "$DATA_DIR/lib/"
+fi
+"$BIN_DIR/node" -v >/dev/null || { echo "private node copy failed to run"; exit 1; }
+echo "node $("$BIN_DIR/node" -v) copied to $BIN_DIR/node (grant Full Disk Access to THIS path)"
 
 cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>

@@ -14,6 +14,9 @@ function loadEnvFile(file: string) {
     let val = line.slice(eq + 1).trim();
     if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
       val = val.slice(1, -1);
+    } else {
+      // strip trailing inline comment:  KEY=value   # note
+      val = val.replace(/\s+#.*$/, '').trim();
     }
     if (process.env[key] === undefined) process.env[key] = val;
   }

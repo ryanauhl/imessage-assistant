@@ -59,6 +59,11 @@ scripts/uninstall-service.sh      # remove
 Logs: `~/Library/Application Support/imessage-assistant/logs/`. Restart after `.env` changes:
 `launchctl kickstart -k gui/$(id -u)/com.ryanauhl.imessage-assistant`.
 
+**Updating:** `scripts/deploy.sh` pulls, installs, builds, restarts the service and waits for the
+health check, printing the commit it ended up on. `git pull` on its own is never enough — `server/dist`
+and `web/dist` are gitignored, so the service keeps running the previously compiled code until you
+rebuild. Use `scripts/deploy.sh --no-pull` to rebuild and restart after local edits.
+
 Nothing else on the Mac is touched: the app lives in the repo + its own data dir, listens on loopback,
 and only reads chat.db. Staged uploads live in the data dir `outbox/` and are pruned after 24 h.
 

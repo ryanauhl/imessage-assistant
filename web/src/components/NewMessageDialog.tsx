@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, type Me } from '../api';
 import { RecipientPicker, type Recipient } from './RecipientPicker';
 
@@ -9,6 +9,18 @@ export function NewMessageDialog({ me, onClose, onSent, notify }: { me: Me; onCl
   const [busy, setBusy] = useState(false);
   const addresses = to.map((r) => r.address);
   const isGroup = addresses.length > 1;
+
+  // Escape closes the dialog. The recipient typeahead swallows Escape while its suggestion
+  // list is open, so the first press dismisses the list and the second closes the dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   const submit = async () => {
     if (!addresses.length || !text.trim()) return;

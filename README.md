@@ -21,7 +21,7 @@ is exposed exclusively through Tailscale Serve or a Cloudflare Tunnel.
 | Search | `message.text` LIKE | |
 | Pin conversations | stored in the browser | Pinned section at top of the list |
 | Resizable conversation list | drag the divider, double-click to reset | width saved per browser |
-| Keyboard shortcuts | Ctrl+N new, Ctrl+F search, Ctrl+[ / Ctrl+] previous/next chat | ⌘ also works on macOS |
+| Keyboard shortcuts | Ctrl+N new, Ctrl+F search, Ctrl+[ / Ctrl+] previous/next chat, Esc closes | ⌘ also works on macOS |
 | Install as an app (PWA) + push notifications + unread badge | manifest + service worker + Web Push | see below |
 | **Send tapbacks, reply in thread, mark groups read / mark unread, create groups, rename / add / remove** | **Private API via BlueBubbles helper (optional)** | Apple has no public API for these; see below |
 

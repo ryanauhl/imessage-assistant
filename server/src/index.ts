@@ -93,7 +93,8 @@ app.register(async (api) => {
       privateApi: papi.privateApiEnabled(),
       tapback: papi.privateApiEnabled(),
       replyInThread: papi.privateApiEnabled(),
-      markRead: papi.privateApiEnabled(),
+      markRead: papi.privateApiEnabled() || config.markReadFallback === 'messages-app',
+      markReadMethod: papi.privateApiEnabled() ? 'private-api' : config.markReadFallback,
       groupManage: papi.privateApiEnabled(),
     },
     dbReadable: dbReadable(),
@@ -238,12 +239,23 @@ app.register(async (api) => {
   );
 
   api.post<{ Params: { id: string }; Body: { unread?: boolean } }>('/chats/:id/read', async (req, reply) => {
-    if (!papi.privateApiEnabled()) return reply.code(501).send({ error: 'mark read requires the Private API (see README)' });
-    const guid = q.chatGuidForId(Number(req.params.id));
+    const chatId = Number(req.params.id);
+    const guid = q.chatGuidForId(chatId);
     if (!guid) return reply.code(404).send({ error: 'chat not found' });
-    if (req.body?.unread) await papi.markUnread(guid);
-    else await papi.markRead(guid);
-    return { ok: true };
+    if (papi.privateApiEnabled()) {
+      if (req.body?.unread) await papi.markUnread(guid);
+      else await papi.markRead(guid);
+      return { ok: true, method: 'private-api' };
+    }
+    if (req.body?.unread) return reply.code(501).send({ error: 'mark unread requires the Private API' });
+    if (config.markReadFallback !== 'messages-app') return reply.code(501).send({ error: 'mark read requires the Private API (see README)' });
+    if (q.chatUnread(chatId) === 0) return { ok: true, method: 'noop' };
+    const parts = q.chatParticipants(chatId);
+    if (parts.length !== 1) return reply.code(501).send({ error: 'group chats can only be marked read with the Private API' });
+    await sender.focusConversation(parts[0].address);
+    // Give Messages.app a moment, then report whether chat.db actually flipped.
+    await new Promise((r) => setTimeout(r, 1500));
+    return { ok: true, method: 'messages-app', remainingUnread: q.chatUnread(chatId) };
   });
 
   api.post<{ Params: { id: string }; Body: { typing: boolean } }>('/chats/:id/typing', async (req, reply) => {

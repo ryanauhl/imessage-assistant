@@ -55,6 +55,13 @@ export const config = {
   addressBookDir: path.join(home, 'Library/Application Support/AddressBook'),
   dataDir: process.env.DATA_DIR ?? path.join(home, 'Library/Application Support/imessage-assistant'),
   pollMs: Number(process.env.POLL_MS ?? 1000),
+  /**
+   * How to mark chats read when no Private API is configured:
+   *  - 'messages-app': bring the conversation to the front in Messages.app (1:1 chats only). macOS then
+   *    marks it read and syncs read state to your other devices. Steals focus on the Mac.
+   *  - 'off': only the Private API can mark read.
+   */
+  markReadFallback: (process.env.MARK_READ_FALLBACK ?? 'messages-app') as 'messages-app' | 'off',
   bluebubbles: {
     url: (process.env.BLUEBUBBLES_URL ?? '').replace(/\/+$/, ''),
     password: process.env.BLUEBUBBLES_PASSWORD ?? '',

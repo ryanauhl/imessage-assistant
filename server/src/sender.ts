@@ -103,6 +103,22 @@ export async function sendFileToAddress(service: 'iMessage' | 'SMS', address: st
   await osascript(SEND_FILE_TO_NEW, [service, address, filePath], 120000);
 }
 
+const ACTIVATE = `tell application "Messages" to activate`;
+
+/**
+ * Brings a 1:1 conversation to the front in Messages.app via the imessage: URL scheme and
+ * activates the app. Viewing a conversation is what makes macOS mark it read (and sync that to
+ * other devices). There is no URL form for group chats.
+ */
+export async function focusConversation(address: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    execFile('open', [`imessage://${address}`], { timeout: 10000 }, (err, _o, stderr) =>
+      err ? reject(new Error((stderr || err.message).toString().trim())) : resolve(),
+    );
+  });
+  await osascript(ACTIVATE, []).catch(() => undefined);
+}
+
 /** Triggers the Automation permission prompt and verifies Messages.app is reachable. */
 export async function pingMessagesApp(): Promise<string> {
   return (await osascript(PING, [])).trim();

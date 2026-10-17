@@ -7,6 +7,14 @@ export interface Me {
   totalUnread: number;
 }
 
+export interface ContactHit {
+  name: string;
+  address: string;
+  kind: 'phone' | 'email';
+  source: 'contacts' | 'recent';
+  service?: string;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string, public body?: unknown) {
     super(message);
@@ -44,7 +52,8 @@ export const api = {
     for (const f of files) fd.append('file', f, f.name);
     return req<{ ok: true }>(`/chats/${id}/files`, { method: 'POST', body: fd });
   },
-  newMessage: (addresses: string[], service: 'iMessage' | 'SMS', text: string) => req<{ ok: true }>('/messages/new', json({ addresses, service, text })),
+  newMessage: (addresses: string[], service: 'iMessage' | 'SMS', text: string) => req<{ ok: true; chatId?: number }>('/messages/new', json({ addresses, service, text })),
+  contactSearch: (q: string) => req<ContactHit[]>(`/contacts/search?q=${encodeURIComponent(q)}`),
   react: (id: number, messageGuid: string, reaction: ReactionName, remove: boolean) => req<{ ok: true }>(`/chats/${id}/react`, json({ messageGuid, reaction, remove })),
   markRead: (id: number, unread = false) => req<{ ok: true }>(`/chats/${id}/read`, json({ unread })),
   typing: (id: number, typing: boolean) => req<{ ok: boolean }>(`/chats/${id}/typing`, json({ typing })).catch(() => undefined),

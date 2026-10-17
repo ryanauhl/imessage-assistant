@@ -59,6 +59,27 @@ export function listChats(limit = 200): ChatSummary[] {
     parts.set(n(p.chatId), list);
   }
 
+  // chat.service_name reflects the handle's *capability*, not the conversation: a thread with
+  // 13k iMessages and one stray RCS row is labelled "RCS". Derive it from recent messages instead.
+  const serviceRows = db
+    .prepare(
+      `WITH recent AS (
+         SELECT cmj.chat_id AS chatId, m.service AS service,
+                ROW_NUMBER() OVER (PARTITION BY cmj.chat_id ORDER BY m.date DESC) AS rn
+           FROM chat_message_join cmj JOIN message m ON m.ROWID = cmj.message_id
+          WHERE cmj.chat_id IN (${ph}) AND m.service IS NOT NULL
+       )
+       SELECT chatId, service, COUNT(*) AS n FROM recent WHERE rn <= 25 GROUP BY chatId, service`,
+    )
+    .all(...ids) as Row[];
+  const serviceByChat = new Map<number, { service: string; n: number }>();
+  for (const r of serviceRows) {
+    const id = n(r.chatId);
+    const cur = serviceByChat.get(id);
+    const cand = { service: String(r.service), n: n(r.n) };
+    if (!cur || cand.n > cur.n) serviceByChat.set(id, cand);
+  }
+
   const unreadRows = db
     .prepare(
       `SELECT cmj.chat_id AS chatId, COUNT(*) AS unread
@@ -96,7 +117,7 @@ export function listChats(limit = 200): ChatSummary[] {
       guid: String(r.guid),
       identifier: String(r.identifier),
       displayName: s(r.displayName) || null,
-      service: String(r.service ?? ''),
+      service: serviceByChat.get(id)?.service ?? String(r.service ?? ''),
       isGroup: n(r.style) === 43,
       participants: parts.get(id) ?? [],
       lastDate: appleDateToMs(r.lastDate as number),
@@ -438,4 +459,26 @@ export function chatParticipants(chatId: number): Array<{ address: string; servi
       .prepare('SELECT h.id AS address, h.service FROM chat_handle_join chj JOIN handle h ON h.ROWID = chj.handle_id WHERE chj.chat_id = ?')
       .all(chatId) as Row[]
   ).map((r) => ({ address: String(r.address), service: String(r.service) }));
+}
+
+/** Number of attachment rows across all messages in a chat. */
+export function attachmentCountForChat(chatId: number): number {
+  const r = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS c FROM chat_message_join cmj
+         JOIN message_attachment_join maj ON maj.message_id = cmj.message_id
+        WHERE cmj.chat_id = ?`,
+    )
+    .get(chatId) as Row;
+  return n(r.c);
+}
+
+/** Polls until the chat has at least `target` attachment rows, or the timeout elapses. */
+export async function waitForAttachments(chatId: number, target: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (attachmentCountForChat(chatId) >= target) return true;
+    if (Date.now() > deadline) return false;
+    await new Promise((r) => setTimeout(r, 400));
+  }
 }

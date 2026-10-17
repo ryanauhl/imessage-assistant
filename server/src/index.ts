@@ -93,8 +93,8 @@ app.register(async (api) => {
       privateApi: papi.privateApiEnabled(),
       tapback: papi.privateApiEnabled(),
       replyInThread: papi.privateApiEnabled(),
-      markRead: papi.privateApiEnabled() || config.markReadFallback === 'messages-app',
-      markReadMethod: papi.privateApiEnabled() ? 'private-api' : config.markReadFallback,
+      markRead: papi.privateApiEnabled(),
+      markReadMethod: papi.privateApiEnabled() ? 'private-api' : 'off',
       groupManage: papi.privateApiEnabled(),
     },
     dbReadable: dbReadable(),
@@ -188,7 +188,8 @@ app.register(async (api) => {
 
   // Multipart: one or more files (+ optional "text" field sent first as its own message)
   api.post<{ Params: { id: string } }>('/chats/:id/files', async (req, reply) => {
-    const guid = q.chatGuidForId(Number(req.params.id));
+    const chatId = Number(req.params.id);
+    const guid = q.chatGuidForId(chatId);
     if (!guid) return reply.code(404).send({ error: 'chat not found' });
     const staged: string[] = [];
     let text = '';
@@ -200,8 +201,22 @@ app.register(async (api) => {
         text = String(part.value ?? '');
       }
     }
+    const staging = sender.stagingUsable();
+    if (!staging.ok) {
+      return reply.code(500).send({ error: `Attachment staging directory unusable: ${staging.reason} (${staging.dir})` });
+    }
     if (text.trim()) await sender.sendText(guid, text);
+    const before = q.attachmentCountForChat(chatId);
     for (const f of staged) await sender.sendFile(guid, f);
+    // Messages.app silently drops transfers it cannot read, producing an empty message. Confirm
+    // the attachment rows actually landed instead of reporting a false success.
+    const landed = await q.waitForAttachments(chatId, before + staged.length, 12000);
+    if (!landed) {
+      req.log.error({ chatId, staged }, 'file send produced no attachment rows');
+      return reply.code(502).send({
+        error: 'Messages.app did not attach the file(s). Nothing was delivered. Check that the staging directory is readable by Messages (see README: Attachments).',
+      });
+    }
     return { ok: true, files: staged.length };
   });
 
@@ -239,23 +254,14 @@ app.register(async (api) => {
   );
 
   api.post<{ Params: { id: string }; Body: { unread?: boolean } }>('/chats/:id/read', async (req, reply) => {
-    const chatId = Number(req.params.id);
-    const guid = q.chatGuidForId(chatId);
+    // Apple exposes no public way to mark a conversation read. Opening it via the imessage: URL
+    // does NOT flip is_read (verified on macOS 27), so the Private API is the only route.
+    if (!papi.privateApiEnabled()) return reply.code(501).send({ error: 'mark read/unread requires the Private API (see README)' });
+    const guid = q.chatGuidForId(Number(req.params.id));
     if (!guid) return reply.code(404).send({ error: 'chat not found' });
-    if (papi.privateApiEnabled()) {
-      if (req.body?.unread) await papi.markUnread(guid);
-      else await papi.markRead(guid);
-      return { ok: true, method: 'private-api' };
-    }
-    if (req.body?.unread) return reply.code(501).send({ error: 'mark unread requires the Private API' });
-    if (config.markReadFallback !== 'messages-app') return reply.code(501).send({ error: 'mark read requires the Private API (see README)' });
-    if (q.chatUnread(chatId) === 0) return { ok: true, method: 'noop' };
-    const parts = q.chatParticipants(chatId);
-    if (parts.length !== 1) return reply.code(501).send({ error: 'group chats can only be marked read with the Private API' });
-    await sender.focusConversation(parts[0].address);
-    // Give Messages.app a moment, then report whether chat.db actually flipped.
-    await new Promise((r) => setTimeout(r, 1500));
-    return { ok: true, method: 'messages-app', remainingUnread: q.chatUnread(chatId) };
+    if (req.body?.unread) await papi.markUnread(guid);
+    else await papi.markRead(guid);
+    return { ok: true, method: 'private-api' };
   });
 
   api.post<{ Params: { id: string }; Body: { typing: boolean } }>('/chats/:id/typing', async (req, reply) => {

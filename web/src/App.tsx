@@ -7,6 +7,7 @@ import { NewMessageDialog } from './components/NewMessageDialog';
 import { Login } from './components/Login';
 import { SearchResults } from './components/SearchResults';
 import { usePins } from './pins';
+import { useSidebarWidth } from './sidebarWidth';
 import { currentSubscription, disablePush, enablePush, pushSupported, setBadge } from './push';
 
 export function App() {
@@ -26,7 +27,9 @@ export function App() {
   const [pushOn, setPushOn] = useState<boolean | null>(null);
   const pushOnRef = useRef(false);
   const { pins, isPinned, toggle: togglePin } = usePins();
+  const { width: sidebarWidth, startDrag, reset: resetWidth, dragging } = useSidebarWidth();
   const refreshTimer = useRef<number | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const incomingRef = useRef<(msgs: Message[], chatIds: number[]) => void>(() => undefined);
 
   const notify = useCallback((msg: string) => {
@@ -144,13 +147,63 @@ export function App() {
     setSearch('');
   };
 
+  // Keyboard shortcuts: Ctrl+N new message, Ctrl+F search, Ctrl+[ / Ctrl+] previous/next chat.
+  const orderedIds = useMemo(() => [...sortedChats.pinned, ...sortedChats.rest].map((c) => c.id), [sortedChats]);
+  const orderedRef = useRef<number[]>([]);
+  orderedRef.current = orderedIds;
+  const selectedRef = useRef<number | null>(null);
+  selectedRef.current = selectedId;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const step = (delta: number) => {
+        const ids = orderedRef.current;
+        if (!ids.length) return;
+        const cur = ids.indexOf(selectedRef.current ?? -1);
+        const next = cur < 0 ? 0 : (cur + delta + ids.length) % ids.length;
+        openChat(ids[next]);
+      };
+      switch (e.key) {
+        case 'n':
+        case 'N':
+          e.preventDefault();
+          setShowNew(true);
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          searchRef.current?.focus();
+          searchRef.current?.select();
+          break;
+        case '[':
+          e.preventDefault();
+          step(-1);
+          break;
+        case ']':
+          e.preventDefault();
+          step(1);
+          break;
+        default:
+          return;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // openChat is stable enough for this listener; ids/selection are read through refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (authError) {
     return <Login needToken={authError.needToken} message={authError.message} onLoggedIn={() => void loadMe()} />;
   }
   if (!me) return <div className="centered muted">Loading…</div>;
 
   return (
-    <div className={`app ${mobileShowChat ? 'show-chat' : ''}`}>
+    <div
+      className={`app ${mobileShowChat ? 'show-chat' : ''} ${dragging ? 'resizing' : ''}`}
+      style={{ ['--sidebar-w' as string]: `${sidebarWidth}px` }}
+    >
       <aside className="sidebar">
         <header className="sidebar-head">
           <div className="title-row">
@@ -159,7 +212,14 @@ export function App() {
               ✎
             </button>
           </div>
-          <input className="search" placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input
+            ref={searchRef}
+            className="search"
+            placeholder="Search  (Ctrl+F)"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && (setSearch(''), e.currentTarget.blur())}
+          />
         </header>
         {searchResults ? (
           <SearchResults results={searchResults} chats={chats} onOpen={openChat} />
@@ -180,6 +240,15 @@ export function App() {
             </button>
           )}
         </footer>
+        <div
+          className="resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize conversation list"
+          title="Drag to resize · double-click to reset"
+          onMouseDown={startDrag}
+          onDoubleClick={resetWidth}
+        />
       </aside>
       <main className="main">
         {selected ? (

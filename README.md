@@ -10,6 +10,7 @@ is exposed exclusively through Tailscale Serve or a Cloudflare Tunnel.
 | Feature | How | Notes |
 |---|---|---|
 | Read all conversations, groups, unread counts, read/delivered receipts | reads `~/Library/Messages/chat.db` (read-only) | needs Full Disk Access |
+| Correct iMessage / SMS / RCS labels | derived from recent messages, not `chat.service_name` | the chat row records handle capability, not the thread |
 | Live updates | watches chat.db WAL, pushes over WebSocket | ~1 s latency |
 | Send text to any existing iMessage / SMS / RCS chat (1:1 and group) | AppleScript → Messages.app | |
 | Send files / images (drag, pick, paste) | AppleScript → Messages.app | |
@@ -19,8 +20,9 @@ is exposed exclusively through Tailscale Serve or a Cloudflare Tunnel.
 | Contact names | reads local AddressBook stores | same FDA grant |
 | Search | `message.text` LIKE | |
 | Pin conversations | stored in the browser | Pinned section at top of the list |
+| Resizable conversation list | drag the divider, double-click to reset | width saved per browser |
+| Keyboard shortcuts | Ctrl+N new, Ctrl+F search, Ctrl+[ / Ctrl+] previous/next chat | ⌘ also works on macOS |
 | Install as an app (PWA) + push notifications + unread badge | manifest + service worker + Web Push | see below |
-| Mark 1:1 chats read when you open/reply here (syncs to iPhone) | focuses the chat in Messages.app | Mac must be unlocked; see Read sync |
 | **Send tapbacks, reply in thread, mark groups read / mark unread, create groups, rename / add / remove** | **Private API via BlueBubbles helper (optional)** | Apple has no public API for these; see below |
 
 Without the Private API those buttons are shown disabled with an explanation; everything else works.
@@ -98,14 +100,34 @@ VAPID keys are generated on first run and stored in the data dir together with t
 Safari on macOS supports this too once installed to the Dock. A secure origin (HTTPS) is required,
 which Tailscale Serve and Cloudflare both provide.
 
-## Read sync
+## Attachments (important)
 
-Opening a conversation here, or replying in it, marks it read on the Mac, which syncs the read
-state to your iPhone and iPad. Without the Private API this works by bringing that conversation to
-the front in Messages.app (`imessage:` URL + activate), which is what makes macOS mark it read.
-Consequences: Messages.app takes focus on the Mac, the Mac must be unlocked, and it only works for
-1:1 chats. The app tells you if the read state didn't flip. Set `MARK_READ_FALLBACK=off` to disable,
-or configure the Private API for silent read/unread on any chat including groups.
+Messages.app is sandboxed, and the upload is performed by a separate helper process, so a staged
+file must be readable by **both**. Get this wrong and the failure is silent: Messages shows a file
+bubble on the Mac while nothing reaches the recipient. Measured on macOS 27 with the same image:
+
+| Staging location | Result |
+|---|---|
+| `~/Library/Application Support/<app>/` | no attachment row at all, empty message delivered |
+| `~/Downloads/<dir>/` | no attachment row (TCC blocks Messages from reading it) |
+| `/private/var/tmp/com.apple.messages/<dir>/` | row created, transfer fails (state 6, error 34) |
+| **`~/Library/Messages/<dir>/`** | **works** — state 5, error 0, file copied into the Messages store |
+
+Outgoing files are therefore staged in `~/Library/Messages/imessage-assistant-outbox/`. Override
+with `UPLOAD_STAGING_DIR` only if you verify attachments still arrive.
+
+Each upload goes in its own subdirectory so the original filename is preserved, and the server
+confirms the attachment rows actually landed before reporting success. If they don't, you get an
+error instead of a message that looks sent but isn't. Staged files are pruned after 6 hours.
+
+## Read sync is not available without the Private API
+
+Apple exposes no public way to mark a conversation read. Opening it with the `imessage:` URL scheme
+does **not** flip the read state (verified on macOS 27: the unread count was unchanged with Messages
+frontmost and the conversation open). Marking read — and therefore clearing the unread badge on your
+iPhone and iPad — only works with the Private API below. This is independent of read receipts: with
+read receipts off, marking a chat read never notifies the sender, it only syncs your own unread
+state across your devices.
 
 ## Tapbacks, reply-in-thread, mark-as-read (Private API)
 

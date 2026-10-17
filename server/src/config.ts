@@ -56,12 +56,17 @@ export const config = {
   dataDir: process.env.DATA_DIR ?? path.join(home, 'Library/Application Support/imessage-assistant'),
   pollMs: Number(process.env.POLL_MS ?? 1000),
   /**
-   * How to mark chats read when no Private API is configured:
-   *  - 'messages-app': bring the conversation to the front in Messages.app (1:1 chats only). macOS then
-   *    marks it read and syncs read state to your other devices. Steals focus on the Mac.
-   *  - 'off': only the Private API can mark read.
+   * Where outgoing attachments are staged for the Messages stack to read.
+   *
+   * Messages.app is sandboxed AND the upload is performed by a separate helper (IMTransferAgent),
+   * so the file must be readable by both. Verified on macOS 27:
+   *   ~/Library/Application Support/<app>/  -> no attachment row at all, empty message sent
+   *   ~/Downloads/<dir>/                    -> no attachment row (TCC blocks Messages)
+   *   /private/var/tmp/com.apple.messages/  -> row created, transfer fails (state 6, error 34)
+   *   ~/Library/Messages/<dir>/             -> works (state 5, error 0, file copied into the store)
+   * Only change this if you know the whole Messages stack can read the new path.
    */
-  markReadFallback: (process.env.MARK_READ_FALLBACK ?? 'messages-app') as 'messages-app' | 'off',
+  uploadStagingDir: process.env.UPLOAD_STAGING_DIR ?? path.join(home, 'Library/Messages/imessage-assistant-outbox'),
   bluebubbles: {
     url: (process.env.BLUEBUBBLES_URL ?? '').replace(/\/+$/, ''),
     password: process.env.BLUEBUBBLES_PASSWORD ?? '',
@@ -70,7 +75,7 @@ export const config = {
 };
 
 export const dirs = {
-  outbox: path.join(config.dataDir, 'outbox'),
+  outbox: config.uploadStagingDir,
   cache: path.join(config.dataDir, 'cache'),
   logs: path.join(config.dataDir, 'logs'),
 };

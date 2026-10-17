@@ -85,7 +85,11 @@ export function RecipientPicker({ value, onChange, autoFocus }: Props) {
               }
             } else if (e.key === 'Backspace' && !q && value.length) {
               onChange(value.slice(0, -1));
-            } else if (e.key === 'Escape') setOpen(false);
+            } else if (e.key === 'Escape' && open) {
+              // Dismiss the suggestion list first; let a second Escape reach the dialog.
+              e.stopPropagation();
+              setOpen(false);
+            }
           }}
         />
       </div>

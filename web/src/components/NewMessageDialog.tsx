@@ -1,20 +1,21 @@
 import { useState } from 'react';
 import { api, type Me } from '../api';
+import { RecipientPicker, type Recipient } from './RecipientPicker';
 
-export function NewMessageDialog({ me, onClose, onSent, notify }: { me: Me; onClose: () => void; onSent: () => void; notify: (m: string) => void }) {
-  const [to, setTo] = useState('');
+export function NewMessageDialog({ me, onClose, onSent, notify }: { me: Me; onClose: () => void; onSent: (chatId?: number) => void; notify: (m: string) => void }) {
+  const [to, setTo] = useState<Recipient[]>([]);
   const [service, setService] = useState<'iMessage' | 'SMS'>('iMessage');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const addresses = to.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+  const addresses = to.map((r) => r.address);
   const isGroup = addresses.length > 1;
 
   const submit = async () => {
     if (!addresses.length || !text.trim()) return;
     setBusy(true);
     try {
-      await api.newMessage(addresses, service, text.trim());
-      onSent();
+      const r = await api.newMessage(addresses, service, text.trim());
+      onSent(r.chatId);
     } catch (e) {
       notify((e as Error).message);
     } finally {
@@ -27,8 +28,8 @@ export function NewMessageDialog({ me, onClose, onSent, notify }: { me: Me; onCl
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>New message</h2>
         <label>
-          To <span className="muted small">(phone or email; comma-separate for a group)</span>
-          <input autoFocus value={to} onChange={(e) => setTo(e.target.value)} placeholder="+1 555 123 4567, name@example.com" />
+          To <span className="muted small">(search contacts; add several for a group)</span>
+          <RecipientPicker value={to} onChange={setTo} autoFocus />
         </label>
         <label>
           Service

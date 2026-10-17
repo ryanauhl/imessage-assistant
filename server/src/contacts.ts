@@ -8,6 +8,13 @@ import { config } from './config.js';
  * Requires Full Disk Access (same grant as chat.db). Fails soft: returns no names.
  */
 let cache: Map<string, string> | null = null;
+let entries: ContactEntry[] = [];
+
+export interface ContactEntry {
+  name: string;
+  address: string; // as stored in Contacts (display form)
+  kind: 'phone' | 'email';
+}
 let cacheAt = 0;
 const TTL_MS = 5 * 60 * 1000;
 
@@ -40,6 +47,8 @@ function findAddressBookDbs(): string[] {
 
 function buildCache(): Map<string, string> {
   const map = new Map<string, string>();
+  const list: ContactEntry[] = [];
+  const seen = new Set<string>();
   for (const file of findAddressBookDbs()) {
     let db: DatabaseSync | null = null;
     try {
@@ -59,6 +68,10 @@ function buildCache(): Map<string, string> {
         if (!name) continue;
         const key = r.phone ? normalizeAddress(r.phone) : r.email ? normalizeAddress(r.email) : null;
         if (key && !map.has(key)) map.set(key, name);
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          list.push({ name, address: (r.phone ?? r.email ?? '').trim(), kind: r.phone ? 'phone' : 'email' });
+        }
       }
     } catch {
       /* skip unreadable source */
@@ -70,6 +83,7 @@ function buildCache(): Map<string, string> {
       }
     }
   }
+  entries = list;
   return map;
 }
 
@@ -86,4 +100,23 @@ export function contactName(address: string | null | undefined): string | undefi
 export function allContacts(): Record<string, string> {
   contactName('x'); // ensure cache
   return Object.fromEntries(cache ?? []);
+}
+
+/** Case-insensitive search over contact names and addresses. */
+export function searchContacts(q: string, limit = 12): ContactEntry[] {
+  contactName('x'); // ensure cache
+  const needle = q.trim().toLowerCase();
+  if (!needle) return [];
+  const digits = needle.replace(/\D/g, '');
+  const out: ContactEntry[] = [];
+  for (const e of entries) {
+    const nameHit = e.name.toLowerCase().includes(needle);
+    const addrHit = e.address.toLowerCase().includes(needle) || (digits.length >= 3 && e.kind === 'phone' && e.address.replace(/\D/g, '').includes(digits));
+    if (nameHit || addrHit) {
+      out.push(e);
+      if (out.length >= limit) break;
+    }
+  }
+  // names starting with the query first
+  return out.sort((a, b) => Number(b.name.toLowerCase().startsWith(needle)) - Number(a.name.toLowerCase().startsWith(needle)));
 }

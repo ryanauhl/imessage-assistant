@@ -122,3 +122,12 @@ a { color: inherit; }
 }
 
 .messages-inner { display: flex; flex-direction: column; gap: 2px; margin-top: auto; }
+
+.recipients { position: relative; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg2); cursor: text; }
+.chips input { flex: 1; min-width: 120px; border: 0 !important; background: transparent !important; padding: 2px 4px !important; outline: none; }
+.chip.recipient { background: var(--sel); color: var(--fg); border-radius: 12px; padding: 2px 8px; font-size: 13px; }
+.suggestions { position: absolute; left: 0; right: 0; top: 100%; z-index: 5; list-style: none; margin: 4px 0 0; padding: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18); max-height: 240px; overflow-y: auto; }
+.suggestions li { display: flex; flex-direction: column; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+.suggestions li.active { background: var(--sel); }
+.s-name { font-weight: 500; }

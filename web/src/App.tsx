@@ -203,8 +203,9 @@ export function App() {
         <NewMessageDialog
           me={me}
           onClose={() => setShowNew(false)}
-          onSent={() => {
+          onSent={(chatId) => {
             setShowNew(false);
+            if (chatId) openChat(chatId);
             setTimeout(() => void loadChats(), 1500);
           }}
           notify={notify}

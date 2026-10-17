@@ -381,3 +381,43 @@ export function chatTitleFor(chatId: number, fallback: string): string {
   }
   return fallback;
 }
+
+/** Handles seen in chat.db (people you've messaged, even without a contact card), matching q. */
+export function searchHandles(q: string, limit = 12): Array<{ address: string; service: string; name?: string }> {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return [];
+  const digits = needle.replace(/\D/g, '');
+  const rows = getDb().prepare('SELECT DISTINCT id AS address, service FROM handle').all() as Row[];
+  const out: Array<{ address: string; service: string; name?: string }> = [];
+  for (const r of rows) {
+    const address = String(r.address);
+    const name = contactName(address);
+    const digitHit = digits.length >= 3 && !address.includes('@') && address.replace(/\D/g, '').includes(digits);
+    if (digitHit || address.toLowerCase().includes(needle) || name?.toLowerCase().includes(needle)) {
+      if (!out.some((x) => x.address === address)) out.push({ address, service: String(r.service), name });
+      if (out.length >= limit) break;
+    }
+  }
+  return out;
+}
+
+/** Existing 1:1 chat for an address (any service), newest first. */
+export function findDirectChat(address: string): { id: number; guid: string } | null {
+  const target = address.trim().toLowerCase();
+  const digits = target.replace(/\D/g, '');
+  const rows = getDb()
+    .prepare(
+      `SELECT c.ROWID AS id, c.guid, h.id AS address,
+              (SELECT MAX(cmj.message_date) FROM chat_message_join cmj WHERE cmj.chat_id = c.ROWID) AS lastDate
+         FROM chat c JOIN chat_handle_join chj ON chj.chat_id = c.ROWID JOIN handle h ON h.ROWID = chj.handle_id
+        WHERE c.style = 45
+        ORDER BY lastDate DESC`,
+    )
+    .all() as Row[];
+  for (const r of rows) {
+    const a = String(r.address).toLowerCase();
+    if (a === target) return { id: n(r.id), guid: String(r.guid) };
+    if (digits.length >= 10 && a.replace(/\D/g, '').endsWith(digits.slice(-10))) return { id: n(r.id), guid: String(r.guid) };
+  }
+  return null;
+}

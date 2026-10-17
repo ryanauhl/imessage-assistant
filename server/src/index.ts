@@ -14,7 +14,7 @@ import * as sender from './sender.js';
 import * as papi from './privateapi.js';
 import { DbWatcher, type ChangeEvent } from './watcher.js';
 import { resolveAttachmentPath, webImagePath, mimeFor } from './attachments.js';
-import { allContacts, contactName } from './contacts.js';
+import { allContacts, contactName, searchContacts } from './contacts.js';
 import type { ReactionName } from './types.js';
 import * as push from './push.js';
 import { chatTitleFor } from './queries.js';
@@ -101,6 +101,18 @@ app.register(async (api) => {
   }));
 
   api.get('/contacts', async () => allContacts());
+
+  api.get<{ Querystring: { q?: string } }>('/contacts/search', async (req) => {
+    const term = (req.query.q ?? '').trim();
+    if (term.length < 1) return [];
+    const fromContacts = searchContacts(term).map((c) => ({ name: c.name, address: c.address, kind: c.kind, source: 'contacts' as const }));
+    const seen = new Set(fromContacts.map((c) => c.address.replace(/\D/g, '').slice(-10) || c.address.toLowerCase()));
+    const fromHandles = q
+      .searchHandles(term)
+      .filter((h) => !seen.has(h.address.replace(/\D/g, '').slice(-10) || h.address.toLowerCase()))
+      .map((h) => ({ name: h.name ?? '', address: h.address, kind: h.address.includes('@') ? ('email' as const) : ('phone' as const), source: 'recent' as const, service: h.service }));
+    return [...fromContacts, ...fromHandles].slice(0, 15);
+  });
 
   api.get<{ Querystring: { limit?: string } }>('/chats', async (req) => q.listChats(Number(req.query.limit ?? 200)));
 
@@ -203,6 +215,11 @@ app.register(async (api) => {
       }
       await papi.createGroup(addresses, text, service);
     } else {
+      const existing = q.findDirectChat(addresses[0]);
+      if (existing) {
+        await sender.sendText(existing.guid, text);
+        return { ok: true, chatId: existing.id };
+      }
       await sender.sendTextToAddress(service, addresses[0], text);
     }
     return { ok: true };

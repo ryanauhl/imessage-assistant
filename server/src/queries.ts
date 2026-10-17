@@ -366,3 +366,18 @@ export function totalUnread(): number {
     .get() as Row;
   return n(r.c);
 }
+
+/** Display title for notifications: group name, else the sender's name. */
+export function chatTitleFor(chatId: number, fallback: string): string {
+  const r = getDb().prepare('SELECT display_name AS name, style FROM chat WHERE ROWID = ?').get(chatId) as Row | undefined;
+  if (!r) return fallback;
+  const name = s(r.name);
+  if (name) return name;
+  if (n(r.style) === 43) {
+    const parts = getDb()
+      .prepare('SELECT h.id FROM chat_handle_join chj JOIN handle h ON h.ROWID = chj.handle_id WHERE chj.chat_id = ?')
+      .all(chatId) as Row[];
+    return parts.map((p) => contactName(String(p.id)) ?? String(p.id)).slice(0, 3).join(', ');
+  }
+  return fallback;
+}

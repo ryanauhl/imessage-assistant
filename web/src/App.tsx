@@ -6,6 +6,8 @@ import { Conversation } from './components/Conversation';
 import { NewMessageDialog } from './components/NewMessageDialog';
 import { Login } from './components/Login';
 import { SearchResults } from './components/SearchResults';
+import { usePins } from './pins';
+import { currentSubscription, disablePush, enablePush, pushSupported, setBadge } from './push';
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -21,6 +23,9 @@ export function App() {
   const [searchResults, setSearchResults] = useState<Message[] | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [mobileShowChat, setMobileShowChat] = useState(false);
+  const [pushOn, setPushOn] = useState<boolean | null>(null);
+  const pushOnRef = useRef(false);
+  const { pins, isPinned, toggle: togglePin } = usePins();
   const refreshTimer = useRef<number | null>(null);
   const incomingRef = useRef<(msgs: Message[], chatIds: number[]) => void>(() => undefined);
 
@@ -35,6 +40,7 @@ export function App() {
       setMe(m);
       setAuthError(null);
       document.title = m.totalUnread ? `(${m.totalUnread}) Messages` : 'Messages';
+      setBadge(m.totalUnread);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         const b = e.body as { needToken?: boolean } | undefined;
@@ -55,7 +61,40 @@ export function App() {
 
   useEffect(() => {
     void loadMe();
+    if (pushSupported()) {
+      currentSubscription().then((sub) => {
+        const on = !!sub && Notification.permission === 'granted';
+        pushOnRef.current = on;
+        setPushOn(on);
+      });
+    } else setPushOn(false);
+    // Notification click → open that chat
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.type === 'open-chat') {
+        setSelectedId(Number(e.data.chatId));
+        setMobileShowChat(true);
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', onMsg);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMsg);
   }, [loadMe]);
+
+  const togglePush = async () => {
+    try {
+      if (pushOnRef.current) {
+        await disablePush();
+        pushOnRef.current = false;
+        setPushOn(false);
+      } else {
+        const ok = await enablePush();
+        pushOnRef.current = ok;
+        setPushOn(ok);
+        if (!ok) notify('Notifications were not allowed by the browser');
+      }
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
 
   useEffect(() => {
     if (!me) return;
@@ -64,12 +103,13 @@ export function App() {
       (ev) => {
         if (ev.type === 'hello') return;
         document.title = ev.totalUnread ? `(${ev.totalUnread}) Messages` : 'Messages';
+        setBadge(ev.totalUnread);
         incomingRef.current(ev.newMessages, ev.chatIds);
         // debounce list refresh (read receipts, previews, unread counts)
         if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
         refreshTimer.current = window.setTimeout(() => void loadChats(), 300);
         const inbound = ev.newMessages.filter((m) => !m.fromMe && m.itemType === 0);
-        if (inbound.length && document.visibilityState !== 'visible' && Notification.permission === 'granted') {
+        if (inbound.length && !pushOnRef.current && document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
           const m = inbound[inbound.length - 1];
           new Notification(m.senderName ?? m.sender ?? 'Message', { body: (m.text ?? 'Attachment').replace(/￼/g, '').slice(0, 140) });
         }
@@ -91,6 +131,11 @@ export function App() {
   }, [search, notify]);
 
   const selected = useMemo(() => chats.find((c) => c.id === selectedId) ?? null, [chats, selectedId]);
+  const sortedChats = useMemo(() => {
+    const pinned = pins.map((g) => chats.find((c) => c.guid === g)).filter((c): c is ChatSummary => !!c);
+    const rest = chats.filter((c) => !pins.includes(c.guid));
+    return { pinned, rest };
+  }, [chats, pins]);
 
   const openChat = (id: number) => {
     setSelectedId(id);
@@ -119,7 +164,7 @@ export function App() {
         {searchResults ? (
           <SearchResults results={searchResults} chats={chats} onOpen={openChat} />
         ) : (
-          <ChatList chats={chats} selectedId={selectedId} onSelect={openChat} />
+          <ChatList pinned={sortedChats.pinned} chats={sortedChats.rest} selectedId={selectedId} onSelect={openChat} onTogglePin={togglePin} />
         )}
         <footer className="sidebar-foot">
           <span className={`dot ${connected ? 'on' : 'off'}`} /> {connected ? 'Live' : 'Reconnecting…'} · {me.identity.name ?? me.identity.login}
@@ -129,9 +174,9 @@ export function App() {
               · limited
             </span>
           )}
-          {'Notification' in window && Notification.permission === 'default' && (
-            <button className="link" onClick={() => void Notification.requestPermission()}>
-              enable notifications
+          {pushOn !== null && pushSupported() && (
+            <button className="link" onClick={() => void togglePush()} title="Push notifications to this device, even when the app is closed">
+              {pushOn ? 'notifications on' : 'enable notifications'}
             </button>
           )}
         </footer>
@@ -143,6 +188,8 @@ export function App() {
             chat={selected}
             me={me}
             onBack={() => setMobileShowChat(false)}
+            pinned={isPinned(selected.guid)}
+            onTogglePin={() => togglePin(selected.guid)}
             notify={notify}
             registerIncoming={(fn) => {
               incomingRef.current = fn;

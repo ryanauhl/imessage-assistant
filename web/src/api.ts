@@ -49,6 +49,9 @@ export const api = {
   markRead: (id: number, unread = false) => req<{ ok: true }>(`/chats/${id}/read`, json({ unread })),
   typing: (id: number, typing: boolean) => req<{ ok: boolean }>(`/chats/${id}/typing`, json({ typing })).catch(() => undefined),
   group: (id: number, body: { name?: string; add?: string; remove?: string }) => req<{ ok: true }>(`/chats/${id}/group`, json(body)),
+  pushKey: () => req<{ publicKey: string; subscriptions: number }>('/push/key'),
+  pushSubscribe: (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }) => req<{ ok: true }>('/push/subscribe', json({ subscription })),
+  pushUnsubscribe: (endpoint: string) => req<{ ok: true }>('/push/unsubscribe', json({ endpoint })),
 };
 
 export function attachmentUrl(id: number, opts: { thumb?: boolean; download?: boolean } = {}) {

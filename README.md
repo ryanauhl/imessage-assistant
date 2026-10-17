@@ -18,6 +18,8 @@ is exposed exclusively through Tailscale Serve or a Cloudflare Tunnel.
 | Tapbacks shown on messages, reply-in-thread quotes, thread view | from chat.db | |
 | Contact names | reads local AddressBook stores | same FDA grant |
 | Search | `message.text` LIKE | |
+| Pin conversations | stored in the browser | Pinned section at top of the list |
+| Install as an app (PWA) + push notifications + unread badge | manifest + service worker + Web Push | see below |
 | **Send tapbacks, reply in thread, mark read/unread, create groups, rename / add / remove** | **Private API via BlueBubbles helper (optional)** | Apple has no public API for these; see below |
 
 Without the Private API those buttons are shown disabled with an explanation; everything else works.
@@ -81,6 +83,19 @@ must carry a valid Access JWT (verified against Cloudflare's JWKS, audience-chec
 
 Set `APP_TOKEN` (any mode) and the UI asks for it once per browser (cookie, 90 days). Required when
 `AUTH_MODE=token`. Generate with `openssl rand -hex 24`.
+
+## Install as an app and get notifications (PWA)
+
+On Windows/macOS Chrome or Edge, open the Tailscale URL and use the install icon in the address bar
+(or menu → *Install Messages*). It opens in its own window and gets a taskbar/dock icon with an
+unread badge. Then click **enable notifications** in the bottom-left of the app. That registers this
+device for Web Push, so new messages notify you even when the window is closed; clicking the
+notification opens that conversation.
+
+Push payloads are end-to-end encrypted (RFC 8291); the browser's push relay only sees ciphertext.
+VAPID keys are generated on first run and stored in the data dir together with the subscriptions.
+Safari on macOS supports this too once installed to the Dock. A secure origin (HTTPS) is required,
+which Tailscale Serve and Cloudflare both provide.
 
 ## Tapbacks, reply-in-thread, mark-as-read (Private API)
 

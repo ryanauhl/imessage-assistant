@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { dirs } from './config.js';
@@ -103,47 +104,62 @@ export async function sendFileToAddress(service: 'iMessage' | 'SMS', address: st
   await osascript(SEND_FILE_TO_NEW, [service, address, filePath], 120000);
 }
 
-const ACTIVATE = `tell application "Messages" to activate`;
-
-/**
- * Brings a 1:1 conversation to the front in Messages.app via the imessage: URL scheme and
- * activates the app. Viewing a conversation is what makes macOS mark it read (and sync that to
- * other devices). There is no URL form for group chats.
- */
-export async function focusConversation(address: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    execFile('open', [`imessage://${address}`], { timeout: 10000 }, (err, _o, stderr) =>
-      err ? reject(new Error((stderr || err.message).toString().trim())) : resolve(),
-    );
-  });
-  await osascript(ACTIVATE, []).catch(() => undefined);
-}
-
 /** Triggers the Automation permission prompt and verifies Messages.app is reachable. */
 export async function pingMessagesApp(): Promise<string> {
   return (await osascript(PING, [])).trim();
 }
 
 /**
- * Messages.app reads the file itself, so uploads are staged in the app data dir (inside the
- * user's home) with a safe filename. Old staged files are pruned.
+ * Messages.app reads the staged file itself and it is sandboxed, so the file MUST live under a
+ * path in its entitlements (see config.uploadStagingDir). Staging elsewhere makes Messages create
+ * an empty message with no attachment and nothing reaches the recipient.
+ *
+ * Each upload gets its own subdirectory so the original filename is preserved exactly: the
+ * recipient sees "photo.png", not "a1b2c3d4-photo.png".
  */
 export function stageUpload(originalName: string, data: Buffer): string {
-  const safe = originalName.replace(/[^\w.\-()\s]/g, '_').slice(0, 120) || 'file';
-  const file = path.join(dirs.outbox, `${crypto.randomUUID().slice(0, 8)}-${safe}`);
+  const safe = originalName.replace(/[/\\]/g, '_').replace(/^\.+/, '').slice(0, 120) || 'file';
+  const dir = path.join(dirs.outbox, crypto.randomUUID());
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, safe);
   fs.writeFileSync(file, data);
+  // Messages runs as the same user but under a different sandbox; make sure it can read it.
+  fs.chmodSync(dir, 0o755);
+  fs.chmodSync(file, 0o644);
   pruneOutbox();
   return file;
 }
 
 function pruneOutbox() {
-  const cutoff = Date.now() - 24 * 3600 * 1000;
+  // Messages keeps reading the file while the transfer is in flight, so keep them a while.
+  const cutoff = Date.now() - 6 * 3600 * 1000;
   try {
     for (const f of fs.readdirSync(dirs.outbox)) {
       const p = path.join(dirs.outbox, f);
-      if (fs.statSync(p).mtimeMs < cutoff) fs.unlinkSync(p);
+      if (fs.statSync(p).mtimeMs < cutoff) fs.rmSync(p, { recursive: true, force: true });
     }
   } catch {
     /* ignore */
   }
+}
+
+/** True when the staging dir exists and Messages.app is allowed to read from it. */
+export function stagingUsable(): { ok: boolean; dir: string; reason?: string } {
+  const dir = dirs.outbox;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.accessSync(dir, fs.constants.W_OK);
+  } catch (e) {
+    return { ok: false, dir, reason: (e as Error).message };
+  }
+  // Messages is sandboxed; these are the prefixes its entitlements allow.
+  const allowed = [
+    '/private/var/tmp/com.apple.messages',
+    path.join(os.homedir(), 'Library/Messages'),
+    path.join(os.homedir(), 'Downloads'),
+  ];
+  if (!allowed.some((a) => dir === a || dir.startsWith(a + path.sep))) {
+    return { ok: false, dir, reason: 'path is outside the sandbox paths Messages.app can read' };
+  }
+  return { ok: true, dir };
 }

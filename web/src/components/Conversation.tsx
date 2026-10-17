@@ -66,11 +66,7 @@ export function Conversation({ chat, me, onBack, pinned, onTogglePin, notify, re
   const markRead = useCallback(async () => {
     if (!me.capabilities.markRead) return;
     try {
-      const r = await api.markRead(chat.id);
-      if (r.method === 'messages-app' && (r.remainingUnread ?? 0) > 0 && !warnedRef.current) {
-        warnedRef.current = true;
-        notify('Messages.app did not mark this conversation read. Make sure the Mac is unlocked with Messages visible.');
-      }
+      await api.markRead(chat.id);
     } catch (e) {
       if (!warnedRef.current) {
         warnedRef.current = true;

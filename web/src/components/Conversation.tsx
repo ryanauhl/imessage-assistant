@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChatSummary, Message } from '@shared/types';
 import { api, type Me } from '../api';
 import { chatTitle, fmtFull, prettyAddress } from '../util';
@@ -221,7 +221,7 @@ export function Conversation({ chat, me, onBack, pinned, onTogglePin, notify, re
           lastSender = m.sender;
           lastTs = m.date ?? 0;
           return (
-            <div key={m.id}>
+            <Fragment key={m.id}>
               {(showDay || gap) && <div className="day-sep">{fmtFull(m.date)}</div>}
               <MessageBubble
                 message={m}
@@ -233,7 +233,7 @@ export function Conversation({ chat, me, onBack, pinned, onTogglePin, notify, re
                 onReact={(r, remove) => void react(m, r, remove)}
                 isLast={m === messages[messages.length - 1]}
               />
-            </div>
+            </Fragment>
           );
         })}
         </div>

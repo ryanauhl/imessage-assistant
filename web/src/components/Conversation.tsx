@@ -10,11 +10,13 @@ interface Props {
   chat: ChatSummary;
   me: Me;
   onBack: () => void;
+  pinned: boolean;
+  onTogglePin: () => void;
   notify: (m: string) => void;
   registerIncoming: (fn: (msgs: Message[], chatIds: number[]) => void) => void;
 }
 
-export function Conversation({ chat, me, onBack, notify, registerIncoming }: Props) {
+export function Conversation({ chat, me, onBack, pinned, onTogglePin, notify, registerIncoming }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
@@ -22,6 +24,7 @@ export function Conversation({ chat, me, onBack, notify, registerIncoming }: Pro
   const [thread, setThread] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
   const stickBottom = useRef(true);
   const prevHeight = useRef(0);
 
@@ -72,6 +75,18 @@ export function Conversation({ chat, me, onBack, notify, registerIncoming }: Pro
     else if (prevHeight.current) el.scrollTop += el.scrollHeight - prevHeight.current;
     prevHeight.current = 0;
   }, [messages]);
+
+  // Keep pinned to the bottom when content grows after render (images load, fallbacks swap in).
+  useEffect(() => {
+    const el = scrollRef.current;
+    const inner = innerRef.current;
+    if (!el || !inner || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (stickBottom.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, []);
 
   const onScroll = async () => {
     const el = scrollRef.current;
@@ -125,6 +140,9 @@ export function Conversation({ chat, me, onBack, notify, registerIncoming }: Pro
           </span>
         </div>
         <div className="spacer" />
+        <button className={`icon-btn ${pinned ? 'active' : ''}`} title={pinned ? 'Unpin conversation' : 'Pin conversation'} onClick={onTogglePin}>
+          {pinned ? '📌' : '📍'}
+        </button>
         {me.capabilities.markRead && (
           <button className="icon-btn" title="Mark as unread" onClick={() => void api.markRead(chat.id, true).catch((e) => notify(e.message))}>
             ●
@@ -176,6 +194,7 @@ export function Conversation({ chat, me, onBack, notify, registerIncoming }: Pro
       )}
 
       <div className="messages" ref={scrollRef} onScroll={() => void onScroll()}>
+        <div className="messages-inner" ref={innerRef}>
         {loading && messages.length === 0 && <div className="muted centered">Loading…</div>}
         {!hasMore && messages.length > 0 && <div className="muted centered small">Beginning of conversation</div>}
         {messages.map((m) => {
@@ -202,6 +221,7 @@ export function Conversation({ chat, me, onBack, notify, registerIncoming }: Pro
             </div>
           );
         })}
+        </div>
       </div>
 
       <Composer

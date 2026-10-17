@@ -16,8 +16,11 @@ import { DbWatcher, type ChangeEvent } from './watcher.js';
 import { resolveAttachmentPath, webImagePath, mimeFor } from './attachments.js';
 import { allContacts, contactName } from './contacts.js';
 import type { ReactionName } from './types.js';
+import * as push from './push.js';
+import { chatTitleFor } from './queries.js';
 
 ensureDirs();
+push.initPush();
 
 const app = Fastify({
   logger: { level: process.env.LOG_LEVEL ?? 'info' },
@@ -35,6 +38,19 @@ watcher.on('change', (ev: ChangeEvent) => {
   const payload = JSON.stringify(ev);
   for (const ws of sockets) {
     if (ws.readyState === ws.OPEN) ws.send(payload);
+  }
+  const recent = Date.now() - 2 * 60 * 1000;
+  const inbound = ev.newMessages.filter(
+    (m) => !m.fromMe && m.itemType === 0 && (m.date ?? 0) > recent && (m.text || m.attachments.length),
+  );
+  for (const m of inbound) {
+    const title = chatTitleFor(m.chatId, m.senderName ?? m.sender ?? 'Message');
+    const who = m.senderName ?? m.sender ?? '';
+    const text = (m.text ?? '').replace(/\uFFFC/g, '').trim() || (m.attachments.length ? '📎 Attachment' : '');
+    void push.broadcast(
+      { title, body: title === who ? text : `${who}: ${text}`, chatId: m.chatId, tag: `chat-${m.chatId}`, unread: ev.totalUnread },
+      (msg) => app.log.warn(msg),
+    );
   }
 });
 watcher.on('error', (e: unknown) => app.log.warn({ err: e }, 'watcher error'));
@@ -234,6 +250,19 @@ app.register(async (api) => {
   api.get('/resolve', async (req) => {
     const addr = String((req.query as Record<string, string>).address ?? '');
     return { address: addr, name: contactName(addr) ?? null };
+  });
+
+  // ----- Web Push (installed PWA notifications) -----
+  api.get('/push/key', async () => ({ publicKey: push.publicKey(), subscriptions: push.subscriptionCount() }));
+  api.post<{ Body: { subscription: { endpoint: string; keys: { p256dh: string; auth: string } } } }>('/push/subscribe', async (req, reply) => {
+    const sub = req.body?.subscription;
+    if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) return reply.code(400).send({ error: 'bad subscription' });
+    push.subscribe(sub, req.identity?.login ?? 'unknown');
+    return { ok: true };
+  });
+  api.post<{ Body: { endpoint: string } }>('/push/unsubscribe', async (req) => {
+    if (req.body?.endpoint) push.unsubscribe(req.body.endpoint);
+    return { ok: true };
   });
 
   // ----- Live updates -----

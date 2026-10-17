@@ -61,12 +61,30 @@ export function Conversation({ chat, me, onBack, pinned, onTogglePin, notify, re
     return () => registerIncoming(() => undefined);
   }, [chat.id, registerIncoming, reload]);
 
-  // Mark as read when viewing (if Private API available) — and auto-refresh shortly after.
+  // Mark as read when viewing or after sending, so read state syncs to your other devices.
+  const warnedRef = useRef(false);
+  const markRead = useCallback(async () => {
+    if (!me.capabilities.markRead) return;
+    try {
+      const r = await api.markRead(chat.id);
+      if (r.method === 'messages-app' && (r.remainingUnread ?? 0) > 0 && !warnedRef.current) {
+        warnedRef.current = true;
+        notify('Messages.app did not mark this conversation read. Make sure the Mac is unlocked with Messages visible.');
+      }
+    } catch (e) {
+      if (!warnedRef.current) {
+        warnedRef.current = true;
+        notify((e as Error).message);
+      }
+    }
+  }, [chat.id, me.capabilities.markRead, notify]);
+
   useEffect(() => {
     if (!me.capabilities.markRead || chat.unread === 0) return;
-    const t = window.setTimeout(() => void api.markRead(chat.id).catch(() => undefined), 800);
+    if (document.visibilityState !== 'visible') return;
+    const t = window.setTimeout(() => void markRead(), 800);
     return () => window.clearTimeout(t);
-  }, [chat.id, chat.unread, me.capabilities.markRead]);
+  }, [chat.id, chat.unread, me.capabilities.markRead, markRead]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -112,6 +130,7 @@ export function Conversation({ chat, me, onBack, pinned, onTogglePin, notify, re
     if (files.length) await api.sendFiles(chat.id, files, text);
     else await api.send(chat.id, text, replyTo?.guid);
     setReplyTo(null);
+    if (chat.unread > 0) void markRead();
   };
 
   const react = async (m: Message, reaction: Parameters<typeof api.react>[2], remove: boolean) => {
@@ -143,7 +162,7 @@ export function Conversation({ chat, me, onBack, pinned, onTogglePin, notify, re
         <button className={`icon-btn ${pinned ? 'active' : ''}`} title={pinned ? 'Unpin conversation' : 'Pin conversation'} onClick={onTogglePin}>
           {pinned ? '📌' : '📍'}
         </button>
-        {me.capabilities.markRead && (
+        {me.capabilities.markReadMethod === 'private-api' && (
           <button className="icon-btn" title="Mark as unread" onClick={() => void api.markRead(chat.id, true).catch((e) => notify(e.message))}>
             ●
           </button>

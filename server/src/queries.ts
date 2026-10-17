@@ -421,3 +421,21 @@ export function findDirectChat(address: string): { id: number; guid: string } | 
   }
   return null;
 }
+
+export function chatUnread(chatId: number): number {
+  const r = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS c FROM chat_message_join cmj JOIN message m ON m.ROWID = cmj.message_id
+        WHERE cmj.chat_id = ? AND m.is_from_me = 0 AND m.is_read = 0 AND m.associated_message_type = 0 AND m.item_type = 0`,
+    )
+    .get(chatId) as Row;
+  return n(r.c);
+}
+
+export function chatParticipants(chatId: number): Array<{ address: string; service: string }> {
+  return (
+    getDb()
+      .prepare('SELECT h.id AS address, h.service FROM chat_handle_join chj JOIN handle h ON h.ROWID = chj.handle_id WHERE chj.chat_id = ?')
+      .all(chatId) as Row[]
+  ).map((r) => ({ address: String(r.address), service: String(r.service) }));
+}

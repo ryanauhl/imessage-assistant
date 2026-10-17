@@ -20,7 +20,8 @@ is exposed exclusively through Tailscale Serve or a Cloudflare Tunnel.
 | Search | `message.text` LIKE | |
 | Pin conversations | stored in the browser | Pinned section at top of the list |
 | Install as an app (PWA) + push notifications + unread badge | manifest + service worker + Web Push | see below |
-| **Send tapbacks, reply in thread, mark read/unread, create groups, rename / add / remove** | **Private API via BlueBubbles helper (optional)** | Apple has no public API for these; see below |
+| Mark 1:1 chats read when you open/reply here (syncs to iPhone) | focuses the chat in Messages.app | Mac must be unlocked; see Read sync |
+| **Send tapbacks, reply in thread, mark groups read / mark unread, create groups, rename / add / remove** | **Private API via BlueBubbles helper (optional)** | Apple has no public API for these; see below |
 
 Without the Private API those buttons are shown disabled with an explanation; everything else works.
 
@@ -96,6 +97,15 @@ Push payloads are end-to-end encrypted (RFC 8291); the browser's push relay only
 VAPID keys are generated on first run and stored in the data dir together with the subscriptions.
 Safari on macOS supports this too once installed to the Dock. A secure origin (HTTPS) is required,
 which Tailscale Serve and Cloudflare both provide.
+
+## Read sync
+
+Opening a conversation here, or replying in it, marks it read on the Mac, which syncs the read
+state to your iPhone and iPad. Without the Private API this works by bringing that conversation to
+the front in Messages.app (`imessage:` URL + activate), which is what makes macOS mark it read.
+Consequences: Messages.app takes focus on the Mac, the Mac must be unlocked, and it only works for
+1:1 chats. The app tells you if the read state didn't flip. Set `MARK_READ_FALLBACK=off` to disable,
+or configure the Private API for silent read/unread on any chat including groups.
 
 ## Tapbacks, reply-in-thread, mark-as-read (Private API)
 

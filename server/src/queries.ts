@@ -482,3 +482,39 @@ export async function waitForAttachments(chatId: number, target: number, timeout
     await new Promise((r) => setTimeout(r, 400));
   }
 }
+
+/**
+ * How to reach this chat in Messages.app: an address for 1:1 chats (navigable via the imessage:
+ * URL) and the title Messages shows, used to match a group in the sidebar.
+ */
+export function chatUiTarget(chatId: number): { address: string; title: string } {
+  const r = getDb().prepare('SELECT display_name AS dn, style FROM chat WHERE ROWID = ?').get(chatId) as Row | undefined;
+  const parts = chatParticipants(chatId);
+  const isGroup = n(r?.style) === 43 || parts.length > 1;
+  return {
+    address: isGroup ? '' : (parts[0]?.address ?? ''),
+    title: chatSidebarTitle(chatId),
+  };
+}
+
+/** The name Messages.app shows for this chat in its sidebar, used to find it for UI automation. */
+export function chatSidebarTitle(chatId: number): string {
+  const r = getDb().prepare('SELECT display_name AS dn, chat_identifier AS ident, style FROM chat WHERE ROWID = ?').get(chatId) as Row | undefined;
+  if (!r) return '';
+  const dn = s(r.dn);
+  if (dn && dn.trim()) return dn.trim();
+  const parts = chatParticipants(chatId);
+  if (parts.length === 1) return contactName(parts[0].address) ?? parts[0].address;
+  // Unnamed group: Messages lists the members, comma separated.
+  return parts.map((p) => contactName(p.address) ?? p.address).join(', ');
+}
+
+/** Polls until the chat reports zero unread, returning whatever remains at the deadline. */
+export async function waitForUnreadToClear(chatId: number, timeoutMs: number): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const n2 = chatUnread(chatId);
+    if (n2 === 0 || Date.now() > deadline) return n2;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+}

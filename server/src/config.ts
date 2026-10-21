@@ -56,6 +56,14 @@ export const config = {
   dataDir: process.env.DATA_DIR ?? path.join(home, 'Library/Application Support/imessage-assistant'),
   pollMs: Number(process.env.POLL_MS ?? 1000),
   /**
+   * How to mark conversations read:
+   *   auto        Private API if configured, else Messages.app UI automation
+   *   private-api only the Private API
+   *   ui          only UI automation (clicks the chat in Messages; steals focus on the Mac)
+   *   off         disabled
+   */
+  markReadMethod: (process.env.MARK_READ_METHOD ?? 'auto') as 'auto' | 'private-api' | 'ui' | 'off',
+  /**
    * Where outgoing attachments are staged for the Messages stack to read.
    *
    * Messages.app is sandboxed AND the upload is performed by a separate helper (IMTransferAgent),

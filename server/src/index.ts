@@ -12,6 +12,7 @@ import { requireAuth, sessionCookieName, sessionTokenFor } from './auth.js';
 import * as q from './queries.js';
 import * as sender from './sender.js';
 import * as papi from './privateapi.js';
+import { guiAutomationAvailable, markChatReadViaUI } from './guiauto.js';
 import { DbWatcher, type ChangeEvent } from './watcher.js';
 import { resolveAttachmentPath, webImagePath, mimeFor } from './attachments.js';
 import { allContacts, contactName, searchContacts } from './contacts.js';
@@ -84,7 +85,9 @@ app.post<{ Body: { token?: string } }>('/api/login', async (req, reply) => {
 app.register(async (api) => {
   api.addHook('preHandler', requireAuth);
 
-  api.get('/me', async (req) => ({
+  api.get('/me', async (req) => {
+    const uiRead = config.markReadMethod !== 'private-api' && config.markReadMethod !== 'off' && (await guiAutomationAvailable());
+    return {
     identity: req.identity,
     capabilities: {
       send: true,
@@ -93,13 +96,15 @@ app.register(async (api) => {
       privateApi: papi.privateApiEnabled(),
       tapback: papi.privateApiEnabled(),
       replyInThread: papi.privateApiEnabled(),
-      markRead: papi.privateApiEnabled(),
-      markReadMethod: papi.privateApiEnabled() ? 'private-api' : 'off',
+      markRead: papi.privateApiEnabled() || uiRead,
+      markReadMethod: papi.privateApiEnabled() ? 'private-api' : uiRead ? 'ui-automation' : 'off',
+      markUnread: papi.privateApiEnabled(),
       groupManage: papi.privateApiEnabled(),
     },
-    dbReadable: dbReadable(),
-    totalUnread: dbReadable() ? q.totalUnread() : 0,
-  }));
+      dbReadable: dbReadable(),
+      totalUnread: dbReadable() ? q.totalUnread() : 0,
+    };
+  });
 
   api.get('/contacts', async () => allContacts());
 
@@ -254,14 +259,33 @@ app.register(async (api) => {
   );
 
   api.post<{ Params: { id: string }; Body: { unread?: boolean } }>('/chats/:id/read', async (req, reply) => {
-    // Apple exposes no public way to mark a conversation read. Opening it via the imessage: URL
-    // does NOT flip is_read (verified on macOS 27), so the Private API is the only route.
-    if (!papi.privateApiEnabled()) return reply.code(501).send({ error: 'mark read/unread requires the Private API (see README)' });
-    const guid = q.chatGuidForId(Number(req.params.id));
+    const chatId = Number(req.params.id);
+    const guid = q.chatGuidForId(chatId);
     if (!guid) return reply.code(404).send({ error: 'chat not found' });
-    if (req.body?.unread) await papi.markUnread(guid);
-    else await papi.markRead(guid);
-    return { ok: true, method: 'private-api' };
+
+    if (papi.privateApiEnabled() && config.markReadMethod !== 'ui') {
+      if (req.body?.unread) await papi.markUnread(guid);
+      else await papi.markRead(guid);
+      return { ok: true, method: 'private-api' };
+    }
+    // Marking UNREAD has no UI-automation equivalent.
+    if (req.body?.unread) return reply.code(501).send({ error: 'marking unread requires the Private API' });
+    if (config.markReadMethod === 'private-api' || config.markReadMethod === 'off') {
+      return reply.code(501).send({ error: 'mark read is disabled or requires the Private API (see README)' });
+    }
+    if (!(await guiAutomationAvailable())) {
+      return reply.code(501).send({
+        error: 'Accessibility permission is not granted to the server, so Messages.app cannot be driven (see README: Read sync).',
+      });
+    }
+    if (q.chatUnread(chatId) === 0) return { ok: true, method: 'noop' };
+
+    const { address, title } = q.chatUiTarget(chatId);
+    const res = await markChatReadViaUI({ address, title });
+    if (!res.ok) return reply.code(502).send({ error: res.reason, method: 'ui-automation' });
+    // Confirm macOS actually cleared it rather than reporting a hopeful success.
+    const remaining = await q.waitForUnreadToClear(chatId, 6000);
+    return { ok: true, method: 'ui-automation', via: res.how, selected: res.title, remainingUnread: remaining };
   });
 
   api.post<{ Params: { id: string }; Body: { typing: boolean } }>('/chats/:id/typing', async (req, reply) => {

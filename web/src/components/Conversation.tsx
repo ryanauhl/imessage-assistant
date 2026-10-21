@@ -66,7 +66,11 @@ export function Conversation({ chat, me, onBack, pinned, onTogglePin, notify, re
   const markRead = useCallback(async () => {
     if (!me.capabilities.markRead) return;
     try {
-      await api.markRead(chat.id);
+      const r = await api.markRead(chat.id);
+      if (r.method === 'ui-automation' && (r.remainingUnread ?? 0) > 0 && !warnedRef.current) {
+        warnedRef.current = true;
+        notify('Messages.app did not clear this conversation. It may not be visible in the sidebar on the Mac.');
+      }
     } catch (e) {
       if (!warnedRef.current) {
         warnedRef.current = true;
@@ -158,7 +162,7 @@ export function Conversation({ chat, me, onBack, pinned, onTogglePin, notify, re
         <button className={`icon-btn ${pinned ? 'active' : ''}`} title={pinned ? 'Unpin conversation' : 'Pin conversation'} onClick={onTogglePin}>
           {pinned ? '📌' : '📍'}
         </button>
-        {me.capabilities.markReadMethod === 'private-api' && (
+        {me.capabilities.markUnread && (
           <button className="icon-btn" title="Mark as unread" onClick={() => void api.markRead(chat.id, true).catch((e) => notify(e.message))}>
             ●
           </button>

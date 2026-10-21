@@ -2,7 +2,7 @@ import type { ChatSummary, Message, ReactionName } from '@shared/types';
 
 export interface Me {
   identity: { provider: string; login: string; name?: string };
-  capabilities: { send: boolean; files: boolean; newChat: boolean; privateApi: boolean; tapback: boolean; replyInThread: boolean; markRead: boolean; markReadMethod: 'private-api' | 'messages-app' | 'off'; groupManage: boolean };
+  capabilities: { send: boolean; files: boolean; newChat: boolean; privateApi: boolean; tapback: boolean; replyInThread: boolean; markRead: boolean; markReadMethod: 'private-api' | 'ui-automation' | 'off'; markUnread: boolean; groupManage: boolean };
   dbReadable: boolean;
   totalUnread: number;
 }
@@ -55,7 +55,7 @@ export const api = {
   newMessage: (addresses: string[], service: 'iMessage' | 'SMS', text: string) => req<{ ok: true; chatId?: number }>('/messages/new', json({ addresses, service, text })),
   contactSearch: (q: string) => req<ContactHit[]>(`/contacts/search?q=${encodeURIComponent(q)}`),
   react: (id: number, messageGuid: string, reaction: ReactionName, remove: boolean) => req<{ ok: true }>(`/chats/${id}/react`, json({ messageGuid, reaction, remove })),
-  markRead: (id: number, unread = false) => req<{ ok: true; method: string; remainingUnread?: number }>(`/chats/${id}/read`, json({ unread })),
+  markRead: (id: number, unread = false) => req<{ ok: true; method: string; matched?: string; remainingUnread?: number }>(`/chats/${id}/read`, json({ unread })),
   typing: (id: number, typing: boolean) => req<{ ok: boolean }>(`/chats/${id}/typing`, json({ typing })).catch(() => undefined),
   group: (id: number, body: { name?: string; add?: string; remove?: string }) => req<{ ok: true }>(`/chats/${id}/group`, json(body)),
   pushKey: () => req<{ publicKey: string; subscriptions: number }>('/push/key'),

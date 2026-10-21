@@ -11,6 +11,7 @@ is exposed exclusively through Tailscale Serve or a Cloudflare Tunnel.
 |---|---|---|
 | Read all conversations, groups, unread counts, read/delivered receipts | reads `~/Library/Messages/chat.db` (read-only) | needs Full Disk Access |
 | Correct iMessage / SMS / RCS labels | derived from recent messages, not `chat.service_name` | the chat row records handle capability, not the thread |
+| Mark one-to-one chats read, syncing to iPhone | Accessibility automation of Messages.app | needs a permission grant, not a SIP change; groups unsupported |
 | Live updates | watches chat.db WAL, pushes over WebSocket | ~1 s latency |
 | Send text to any existing iMessage / SMS / RCS chat (1:1 and group) | AppleScript → Messages.app | |
 | Send files / images (drag, pick, paste) | AppleScript → Messages.app | |
@@ -125,14 +126,39 @@ Each upload goes in its own subdirectory so the original filename is preserved, 
 confirms the attachment rows actually landed before reporting success. If they don't, you get an
 error instead of a message that looks sent but isn't. Staged files are pruned after 6 hours.
 
-## Read sync is not available without the Private API
+## Read sync
 
-Apple exposes no public way to mark a conversation read. Opening it with the `imessage:` URL scheme
-does **not** flip the read state (verified on macOS 27: the unread count was unchanged with Messages
-frontmost and the conversation open). Marking read — and therefore clearing the unread badge on your
-iPhone and iPad — only works with the Private API below. This is independent of read receipts: with
-read receipts off, marking a chat read never notifies the sender, it only syncs your own unread
-state across your devices.
+Opening a conversation in the web app marks it read on the Mac, which syncs the cleared badge to
+your iPhone and iPad. This is independent of read receipts: with receipts off, marking read never
+notifies the sender, it only syncs your own unread state.
+
+Apple exposes no API for this, so the server drives Messages.app through the Accessibility API. It
+navigates to the conversation with the `imessage:` URL and then invokes **Conversation > Mark as
+Read** from the menu bar. Measured on macOS 27:
+
+| Approach | Result |
+|---|---|
+| `imessage:` URL alone | unread unchanged, even with Messages frontmost |
+| Clicking the conversation in the sidebar | works, but the sidebar is hidden in a narrow window |
+| **URL navigation + Mark as Read menu item** | **works, and does not depend on window layout** |
+
+Setup: add the server's node binary to System Settings > Privacy & Security > Accessibility.
+
+```
+~/Library/Application Support/imessage-assistant/bin/node
+```
+
+The service must be restarted afterwards, since the permission is read at process start:
+`launchctl kickstart -k gui/$(id -u)/com.ryanauhl.imessage-assistant`.
+
+Caveats worth knowing before you enable it:
+
+- Messages.app is brought to the front on the Mac each time a conversation is marked read.
+- **Group chats are not supported.** The `imessage:` URL has no group form, so the fallback has to
+  find the conversation in the sidebar, which is hidden whenever the Messages window is narrow.
+  Group chats return a clear error rather than marking the wrong conversation read.
+- Marking a conversation *unread* still requires the Private API.
+- Set `MARK_READ_METHOD=off` to disable, or `private-api` to require the Private API instead.
 
 ## Tapbacks, reply-in-thread, mark-as-read (Private API)
 

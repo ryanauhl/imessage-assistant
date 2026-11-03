@@ -157,10 +157,15 @@ handling. A group that ran on iMessage for years and has since moved to RCS stay
 the iMessage account, and there is no way to reach the other instance: service-prefixed GUIDs
 (`RCS;+;<id>`) do not resolve, and the group is absent from the RCS and SMS accounts' chat lists.
 
-Rather than quietly send on the wrong transport, the server checks which account a group's chat is
-bound to and returns **409 `service_mismatch`** when the conversation is RCS or SMS but the chat
-resolves to iMessage. The web app then asks whether to send as iMessage anyway. The check only runs
-for non-iMessage groups and is cached for ten minutes, so it does not slow down normal sending.
+Messages re-binds this on its own: the same thread can sit under the iMessage account, flip to RCS,
+and flip back, which is why the behaviour looks intermittent. The Mac's own Messages window sends
+on whatever the current binding is, so a blue bubble there is not an app limitation.
+
+Rather than quietly send on the wrong transport, the server resolves the binding at send time and
+returns **409 `service_mismatch`** when the conversation is RCS or SMS but the chat resolves to
+iMessage. The web app surfaces the reason and offers to send as iMessage anyway. The lookup is
+cached for only fifteen seconds, enough to coalesce a burst of sends without going stale while the
+binding moves. It runs only for non-iMessage groups, so ordinary sending is unaffected.
 
 ## Read sync
 

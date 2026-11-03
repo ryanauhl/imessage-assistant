@@ -194,7 +194,7 @@ app.register(async (api) => {
             const bound = await sender.chatAccountService(guid);
             if (bound === 'iMessage') {
               return reply.code(409).send({
-                error: `This group is ${t.service} now, but Messages.app still has it registered as an iMessage chat, so sending from here would go out as iMessage. Send it from your phone, or resend to force iMessage.`,
+                error: `Messages.app currently has this group bound to iMessage even though the conversation is ${t.service}, so sending from here would go out as iMessage. The Mac flips this binding on its own, so trying again shortly may work. Otherwise send it from your phone, or resend to force iMessage.`,
                 code: 'service_mismatch',
                 conversationService: t.service,
                 wouldSendAs: 'iMessage',

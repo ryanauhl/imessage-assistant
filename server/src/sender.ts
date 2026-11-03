@@ -121,7 +121,10 @@ on run argv
 end run`;
 
 const accountCache = new Map<string, { service: string; at: number }>();
-const ACCOUNT_TTL = 10 * 60 * 1000;
+// Messages re-binds this over time: a thread that has moved to RCS can sit under the iMessage
+// account, flip to RCS, and flip back. The cache therefore only exists to coalesce a burst of
+// sends, never to remember the binding.
+const ACCOUNT_TTL = 15 * 1000;
 
 /** Returns 'iMessage' | 'SMS' | 'RCS' | 'unknown' for a chat GUID, cached. */
 export async function chatAccountService(guid: string): Promise<string> {

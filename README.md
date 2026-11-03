@@ -142,9 +142,25 @@ So one-to-one chats are now sent by addressing the participant under the account
 conversation's current service, taken from the newest message in the thread. iMessage threads are
 unaffected and still use the chat reference.
 
-**Group chats are not covered.** Groups have no participant form, and the group did not appear in
-the RCS account's chat list, so there is no handle to address. Group sends still go out as iMessage
-even when the thread is RCS. Send those from your phone.
+### Groups
+
+Groups have no participant form, so the only handle is the chat object, and which account that
+object belongs to is decided by Messages, not by us:
+
+| Group | `chat id <guid>` resolves to | Sends correctly? |
+|---|---|---|
+| Only ever RCS | RCS account | yes |
+| Long iMessage history, now RCS | iMessage account | no |
+
+A group that has always been RCS resolves to the RCS account and sends fine with no special
+handling. A group that ran on iMessage for years and has since moved to RCS stays registered under
+the iMessage account, and there is no way to reach the other instance: service-prefixed GUIDs
+(`RCS;+;<id>`) do not resolve, and the group is absent from the RCS and SMS accounts' chat lists.
+
+Rather than quietly send on the wrong transport, the server checks which account a group's chat is
+bound to and returns **409 `service_mismatch`** when the conversation is RCS or SMS but the chat
+resolves to iMessage. The web app then asks whether to send as iMessage anyway. The check only runs
+for non-iMessage groups and is cached for ten minutes, so it does not slow down normal sending.
 
 ## Read sync
 

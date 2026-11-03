@@ -174,7 +174,7 @@ app.register(async (api) => {
   );
 
   // ----- Sending -----
-  api.post<{ Params: { id: string }; Body: { text?: string; replyToGuid?: string; partIndex?: number } }>(
+  api.post<{ Params: { id: string }; Body: { text?: string; replyToGuid?: string; partIndex?: number; force?: boolean } }>(
     '/chats/:id/send',
     async (req, reply) => {
       const guid = q.chatGuidForId(Number(req.params.id));
@@ -190,6 +190,17 @@ app.register(async (api) => {
           // Route by participant under the SMS/RCS account; chat id would force iMessage.
           await sender.sendTextToAddress(t.service, t.address, text);
         } else {
+          if (t.isGroup && t.service !== 'iMessage' && !req.body?.force) {
+            const bound = await sender.chatAccountService(guid);
+            if (bound === 'iMessage') {
+              return reply.code(409).send({
+                error: `This group is ${t.service} now, but Messages.app still has it registered as an iMessage chat, so sending from here would go out as iMessage. Send it from your phone, or resend to force iMessage.`,
+                code: 'service_mismatch',
+                conversationService: t.service,
+                wouldSendAs: 'iMessage',
+              });
+            }
+          }
           await sender.sendText(guid, text);
         }
       }

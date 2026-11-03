@@ -53,6 +53,14 @@ on run argv
   end tell
 end run`;
 
+/**
+ * Sends through a specific account.
+ *
+ * This matters because `chat id <guid>` always resolves to the iMessage account, even when the
+ * conversation has moved to RCS (verified on macOS 27: a chat whose recent messages are all RCS
+ * still reports `service type of account` = iMessage). Addressing the participant under the
+ * correct account is what actually picks the transport.
+ */
 const SEND_TO_NEW = `
 on run argv
   set serviceName to item 1 of argv
@@ -61,6 +69,8 @@ on run argv
   tell application "Messages"
     if serviceName is "SMS" then
       set targetService to 1st account whose service type = SMS
+    else if serviceName is "RCS" then
+      set targetService to 1st account whose service type = RCS
     else
       set targetService to 1st account whose service type = iMessage
     end if
@@ -77,6 +87,8 @@ on run argv
   tell application "Messages"
     if serviceName is "SMS" then
       set targetService to 1st account whose service type = SMS
+    else if serviceName is "RCS" then
+      set targetService to 1st account whose service type = RCS
     else
       set targetService to 1st account whose service type = iMessage
     end if
@@ -96,11 +108,13 @@ export async function sendFile(chatGuid: string, filePath: string): Promise<void
   await osascript(SEND_FILE_TO_CHAT, [chatGuid, filePath], 120000);
 }
 
-export async function sendTextToAddress(service: 'iMessage' | 'SMS', address: string, text: string): Promise<void> {
+export type SendService = 'iMessage' | 'SMS' | 'RCS';
+
+export async function sendTextToAddress(service: SendService, address: string, text: string): Promise<void> {
   await osascript(SEND_TO_NEW, [service, address, text]);
 }
 
-export async function sendFileToAddress(service: 'iMessage' | 'SMS', address: string, filePath: string): Promise<void> {
+export async function sendFileToAddress(service: SendService, address: string, filePath: string): Promise<void> {
   await osascript(SEND_FILE_TO_NEW, [service, address, filePath], 120000);
 }
 

@@ -13,7 +13,7 @@ is exposed exclusively through Tailscale Serve or a Cloudflare Tunnel.
 | Correct iMessage / SMS / RCS labels | derived from recent messages, not `chat.service_name` | the chat row records handle capability, not the thread |
 | Mark one-to-one chats read, syncing to iPhone | Accessibility automation of Messages.app | needs a permission grant, not a SIP change; groups unsupported |
 | Live updates | watches chat.db WAL, pushes over WebSocket | ~1 s latency |
-| Send text to any existing iMessage / SMS / RCS chat (1:1 and group) | AppleScript → Messages.app | |
+| Send text to any existing iMessage / SMS / RCS chat (1:1 and group) | AppleScript → Messages.app | RCS routing for 1:1 only, see below |
 | Send files / images (drag, pick, paste) | AppleScript → Messages.app | |
 | Start a new 1:1 conversation (iMessage or SMS) | AppleScript | SMS needs Text Message Forwarding |
 | View attachments (HEIC auto-converted), videos, audio | served from Attachments dir | |
@@ -125,6 +125,26 @@ with `UPLOAD_STAGING_DIR` only if you verify attachments still arrive.
 Each upload goes in its own subdirectory so the original filename is preserved, and the server
 confirms the attachment rows actually landed before reporting success. If they don't, you get an
 error instead of a message that looks sent but isn't. Staged files are pruned after 6 hours.
+
+## Sending to RCS conversations
+
+When a contact moves from iPhone to Android their thread becomes RCS, but `chat id <guid>` in
+AppleScript always resolves to the **iMessage** account, so replies kept going out as iMessage.
+Verified on macOS 27 against a thread whose recent messages were all RCS:
+
+| Addressing | Resolves to |
+|---|---|
+| `chat id "any;-;+1555…"` | iMessage account |
+| `participant "+1555…" of <RCS account>` | RCS account |
+| `chat id "any;-;+1555…" of <RCS account>` | fails |
+
+So one-to-one chats are now sent by addressing the participant under the account matching the
+conversation's current service, taken from the newest message in the thread. iMessage threads are
+unaffected and still use the chat reference.
+
+**Group chats are not covered.** Groups have no participant form, and the group did not appear in
+the RCS account's chat list, so there is no handle to address. Group sends still go out as iMessage
+even when the thread is RCS. Send those from your phone.
 
 ## Read sync
 

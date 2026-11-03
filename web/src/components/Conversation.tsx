@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChatSummary, Message } from '@shared/types';
-import { api, type Me } from '../api';
+import { api, ApiError, type Me } from '../api';
 import { chatTitle, fmtFull, prettyAddress } from '../util';
 import { MessageBubble } from './MessageBubble';
 import { Composer } from './Composer';
@@ -128,7 +128,20 @@ export function Conversation({ chat, me, onBack, pinned, onTogglePin, notify, re
   const send = async (text: string, files: File[]) => {
     stickBottom.current = true;
     if (files.length) await api.sendFiles(chat.id, files, text);
-    else await api.send(chat.id, text, replyTo?.guid);
+    else {
+      try {
+        await api.send(chat.id, text, replyTo?.guid);
+      } catch (e) {
+        // The group moved to RCS but Messages still has it bound to iMessage, so sending from
+        // here would quietly go out on the wrong transport. Make that the user's call.
+        const body = e instanceof ApiError ? (e.body as { code?: string } | undefined) : undefined;
+        if (body?.code !== 'service_mismatch') throw e;
+        if (!window.confirm(`${(e as Error).message}\n\nSend as iMessage anyway?`)) {
+          throw new Error('Not sent. Send this one from your phone to keep it on RCS.');
+        }
+        await api.send(chat.id, text, replyTo?.guid, true);
+      }
+    }
     setReplyTo(null);
     if (chat.unread > 0) void markRead();
   };

@@ -99,6 +99,44 @@ end run`;
 
 const PING = `tell application "Messages" to get name`;
 
+/**
+ * Which account Messages.app binds a chat GUID to.
+ *
+ * This is not always the conversation's current service. A group that ran on iMessage for years
+ * and has since moved to RCS stays registered under the iMessage account, and `chat id <guid>`
+ * returns that instance, so any AppleScript send goes out as iMessage. A group that has only ever
+ * been RCS resolves to the RCS account and sends correctly. Service-prefixed GUID forms
+ * ("RCS;+;<id>") do not resolve at all, so there is no way to ask for the other instance.
+ */
+const CHAT_ACCOUNT = `
+on run argv
+  tell application "Messages"
+    try
+      set c to chat id (item 1 of argv)
+      return (service type of account of c) as text
+    on error
+      return "unknown"
+    end try
+  end tell
+end run`;
+
+const accountCache = new Map<string, { service: string; at: number }>();
+const ACCOUNT_TTL = 10 * 60 * 1000;
+
+/** Returns 'iMessage' | 'SMS' | 'RCS' | 'unknown' for a chat GUID, cached. */
+export async function chatAccountService(guid: string): Promise<string> {
+  const hit = accountCache.get(guid);
+  if (hit && Date.now() - hit.at < ACCOUNT_TTL) return hit.service;
+  let service = 'unknown';
+  try {
+    service = (await osascript(CHAT_ACCOUNT, [guid], 12000)).trim() || 'unknown';
+  } catch {
+    service = 'unknown';
+  }
+  accountCache.set(guid, { service, at: Date.now() });
+  return service;
+}
+
 export async function sendText(chatGuid: string, text: string): Promise<void> {
   if (!text.trim()) throw new Error('Empty message');
   await osascript(SEND_TO_CHAT, [chatGuid, text]);

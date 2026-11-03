@@ -45,7 +45,7 @@ export const api = {
   messages: (id: number, before?: number) => req<Message[]>(`/chats/${id}/messages?limit=60${before ? `&before=${before}` : ''}`),
   thread: (guid: string) => req<Message[]>(`/threads/${encodeURIComponent(guid)}`),
   search: (q: string) => req<Message[]>(`/search?q=${encodeURIComponent(q)}`),
-  send: (id: number, text: string, replyToGuid?: string) => req<{ ok: true }>(`/chats/${id}/send`, json({ text, replyToGuid })),
+  send: (id: number, text: string, replyToGuid?: string, force?: boolean) => req<{ ok: true }>(`/chats/${id}/send`, json({ text, replyToGuid, force })),
   sendFiles: (id: number, files: File[], text?: string) => {
     const fd = new FormData();
     if (text) fd.append('text', text);

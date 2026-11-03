@@ -185,7 +185,13 @@ app.register(async (api) => {
         if (!papi.privateApiEnabled()) return reply.code(501).send({ error: 'reply-in-thread requires the Private API (see README)' });
         await papi.replyInThread(guid, text, req.body.replyToGuid, req.body.partIndex ?? 0);
       } else {
-        await sender.sendText(guid, text);
+        const t = q.chatSendTarget(Number(req.params.id));
+        if (!t.isGroup && t.address && t.service !== 'iMessage') {
+          // Route by participant under the SMS/RCS account; chat id would force iMessage.
+          await sender.sendTextToAddress(t.service, t.address, text);
+        } else {
+          await sender.sendText(guid, text);
+        }
       }
       return { ok: true };
     },
@@ -210,9 +216,17 @@ app.register(async (api) => {
     if (!staging.ok) {
       return reply.code(500).send({ error: `Attachment staging directory unusable: ${staging.reason} (${staging.dir})` });
     }
-    if (text.trim()) await sender.sendText(guid, text);
+    const target = q.chatSendTarget(chatId);
+    const viaAccount = !target.isGroup && target.address && target.service !== 'iMessage';
+    if (text.trim()) {
+      if (viaAccount) await sender.sendTextToAddress(target.service, target.address!, text);
+      else await sender.sendText(guid, text);
+    }
     const before = q.attachmentCountForChat(chatId);
-    for (const f of staged) await sender.sendFile(guid, f);
+    for (const f of staged) {
+      if (viaAccount) await sender.sendFileToAddress(target.service, target.address!, f);
+      else await sender.sendFile(guid, f);
+    }
     // Messages.app silently drops transfers it cannot read, producing an empty message. Confirm
     // the attachment rows actually landed instead of reporting a false success.
     const landed = await q.waitForAttachments(chatId, before + staged.length, 12000);
@@ -225,16 +239,18 @@ app.register(async (api) => {
     return { ok: true, files: staged.length };
   });
 
-  api.post<{ Body: { addresses: string[]; service?: 'iMessage' | 'SMS'; text: string } }>('/messages/new', async (req, reply) => {
+  api.post<{ Body: { addresses: string[]; service?: sender.SendService; text: string } }>('/messages/new', async (req, reply) => {
     const addresses = (req.body?.addresses ?? []).map((a) => a.trim()).filter(Boolean);
-    const service = req.body?.service === 'SMS' ? 'SMS' : 'iMessage';
+    const asked = req.body?.service;
+    const service: sender.SendService = asked === 'SMS' ? 'SMS' : asked === 'RCS' ? 'RCS' : 'iMessage';
     const text = (req.body?.text ?? '').toString();
     if (!addresses.length || !text.trim()) return reply.code(400).send({ error: 'addresses and text required' });
     if (addresses.length > 1) {
       if (!papi.privateApiEnabled()) {
         return reply.code(501).send({ error: 'Creating a new group chat requires the Private API. Start it from iPhone/Mac once, then it will appear here.' });
       }
-      await papi.createGroup(addresses, text, service);
+      // BlueBubbles only distinguishes iMessage from text messaging for new groups.
+        await papi.createGroup(addresses, text, service === 'iMessage' ? 'iMessage' : 'SMS');
     } else {
       const existing = q.findDirectChat(addresses[0]);
       if (existing) {

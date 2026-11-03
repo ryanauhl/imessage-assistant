@@ -518,3 +518,33 @@ export async function waitForUnreadToClear(chatId: number, timeoutMs: number): P
     await new Promise((r) => setTimeout(r, 400));
   }
 }
+
+/**
+ * How to send into an existing chat.
+ *
+ * `chat id <guid>` always binds to the iMessage account, so a conversation that has moved to RCS
+ * would keep going out as iMessage. For one-to-one chats we therefore route by participant under
+ * the account matching the conversation's current service. Groups have no participant form, so
+ * they stay on the chat reference.
+ */
+export function chatSendTarget(chatId: number): {
+  guid: string | null;
+  address: string | null;
+  service: 'iMessage' | 'SMS' | 'RCS';
+  isGroup: boolean;
+} {
+  const row = getDb().prepare('SELECT guid, style FROM chat WHERE ROWID = ?').get(chatId) as Row | undefined;
+  const parts = chatParticipants(chatId);
+  const isGroup = n(row?.style) === 43 || parts.length > 1;
+  // The newest message is the best signal of what the conversation currently is: when someone
+  // switches from iPhone to Android the thread flips even though thousands of old rows say iMessage.
+  const last = getDb()
+    .prepare(
+      `SELECT m.service FROM chat_message_join cmj JOIN message m ON m.ROWID = cmj.message_id
+        WHERE cmj.chat_id = ? AND m.service IS NOT NULL ORDER BY m.date DESC LIMIT 1`,
+    )
+    .get(chatId) as Row | undefined;
+  const svc = String(last?.service ?? 'iMessage');
+  const service = svc === 'RCS' ? 'RCS' : svc === 'SMS' ? 'SMS' : 'iMessage';
+  return { guid: row ? String(row.guid) : null, address: isGroup ? null : (parts[0]?.address ?? null), service, isGroup };
+}

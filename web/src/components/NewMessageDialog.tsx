@@ -4,7 +4,7 @@ import { RecipientPicker, type Recipient } from './RecipientPicker';
 
 export function NewMessageDialog({ me, onClose, onSent, notify }: { me: Me; onClose: () => void; onSent: (chatId?: number) => void; notify: (m: string) => void }) {
   const [to, setTo] = useState<Recipient[]>([]);
-  const [service, setService] = useState<'iMessage' | 'SMS'>('iMessage');
+  const [service, setService] = useState<'iMessage' | 'SMS' | 'RCS'>('iMessage');
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const addresses = to.map((r) => r.address);
@@ -45,9 +45,10 @@ export function NewMessageDialog({ me, onClose, onSent, notify }: { me: Me; onCl
         </label>
         <label>
           Service
-          <select value={service} onChange={(e) => setService(e.target.value as 'iMessage' | 'SMS')}>
+          <select value={service} onChange={(e) => setService(e.target.value as 'iMessage' | 'SMS' | 'RCS')}>
             <option value="iMessage">iMessage</option>
             <option value="SMS">SMS / Text Message Forwarding</option>
+            <option value="RCS">RCS</option>
           </select>
         </label>
         {isGroup && !me.capabilities.groupManage && (

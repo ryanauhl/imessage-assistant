@@ -242,22 +242,39 @@ Caveats worth knowing before you enable it:
 - Marking a conversation *unread* still requires the Private API.
 - Set `MARK_READ_METHOD=off` to disable, or `private-api` to require the Private API instead.
 
-## Tapbacks, reply-in-thread, mark-as-read (Private API)
+## Tapbacks, reply-in-thread, mark-as-read (optional Private API)
 
-Apple provides no public API for these; AppleScript can only send text/files. The working approach is
-BlueBubbles' Private API helper, which injects into Messages.app (requires SIP partially disabled —
-read their docs and decide if that's acceptable for you):
-https://docs.bluebubbles.app/private-api/installation
+Apple provides no public API for sending tapbacks, replying in a thread, marking read or unread,
+or managing group membership. AppleScript can only send text and files. The only known way to do
+those is a helper that calls into Messages.app's internal functions.
 
-Once BlueBubbles Server runs on this Mac with Private API enabled, add to `.env`:
+[BlueBubbles Server](https://github.com/BlueBubblesApp/bluebubbles-server) (Apache-2.0) provides
+one, and this project can talk to it. **This is entirely optional.** Nothing here depends on
+BlueBubbles: without it those features report `501` and everything else works normally.
+
+> **Read their documentation before you consider this.** Their Private API requires **fully
+> disabling System Integrity Protection** with `csrutil disable` from Recovery, and it injects a
+> helper into Messages.app. Their own docs compare it to jailbreaking, disclaim responsibility for
+> any damage, and note that on Apple Silicon disabling SIP also stops your Mac running iOS apps.
+> That is a serious reduction in your Mac's security posture. I do not run it, and I am not
+> recommending it — I am documenting that the hook exists.
+>
+> Setup instructions are theirs, not mine: https://docs.bluebubbles.app/private-api/installation
+
+If you do run it, point this server at it:
 
 ```
 BLUEBUBBLES_URL=http://127.0.0.1:1234
 BLUEBUBBLES_PASSWORD=<its server password>
 ```
 
-The capabilities flip on automatically (`GET /api/me` → `capabilities`). You don't need to use the
-BlueBubbles client; this app just calls its local REST API for those operations.
+Capabilities then flip on automatically, visible at `GET /api/me`. You do not need the BlueBubbles
+client app; this only calls its local REST API.
+
+**Caveat: this adapter is untested.** `server/src/privateapi.ts` is written against their documented
+endpoints but has never been exercised against a running instance, because I have never enabled it.
+Treat it as a starting point, and expect to fix things. No BlueBubbles code is included, vendored or
+linked here; it is an HTTP client for a service you would run yourself.
 
 ## Development
 
@@ -290,8 +307,11 @@ without changes. The only conditions are that the copyright notice travels with 
 accept it comes with **no warranty of any kind**. Given what it touches, that disclaimer is the part
 that matters most.
 
-## Not affiliated with Apple
+## Not affiliated with Apple or BlueBubbles
 
 This is an independent project with no connection to Apple Inc. iMessage, Messages and macOS are
 trademarks of Apple Inc. It relies on undocumented behaviour of Messages.app and local file formats
 that Apple is free to change at any time.
+
+It is also unaffiliated with and unendorsed by the BlueBubbles project. BlueBubbles is named only to
+describe an optional integration; no BlueBubbles code is distributed here.

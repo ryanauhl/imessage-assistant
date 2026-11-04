@@ -3,8 +3,14 @@ import type { ReactionName } from './types.js';
 
 /**
  * Optional adapter for features Apple exposes no public API for: tapbacks, reply-in-thread,
- * mark-as-read, group management. Backed by a BlueBubbles server running on this Mac with its
- * Private API helper enabled (https://docs.bluebubbles.app/private-api/installation).
+ * mark-as-read, group management. Backed by a BlueBubbles server (Apache-2.0) running on this Mac
+ * with its Private API helper enabled. That helper requires System Integrity Protection to be
+ * fully disabled and injects into Messages.app, so it is strictly opt-in:
+ * https://docs.bluebubbles.app/private-api/installation
+ *
+ * No BlueBubbles code is used here; this is an HTTP client for its local REST API.
+ *
+ * UNTESTED: written against the documented endpoints but never exercised against a live instance.
  */
 export function privateApiEnabled(): boolean {
   return Boolean(config.bluebubbles.url && config.bluebubbles.password);

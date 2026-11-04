@@ -9,7 +9,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-LABEL="com.ryanauhl.imessage-assistant"
+LABEL="${SERVICE_LABEL:-com.imessage-assistant.server}"
+# Installs made before the label was genericised still use the old one.
+LEGACY_LABEL="com.ryanauhl.imessage-assistant"
+if ! launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 \
+   && launchctl print "gui/$(id -u)/$LEGACY_LABEL" >/dev/null 2>&1; then
+  LABEL="$LEGACY_LABEL"
+fi
 DATA_DIR="${DATA_DIR:-$HOME/Library/Application Support/imessage-assistant}"
 
 if [ ! -f .env ]; then

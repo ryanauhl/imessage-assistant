@@ -34,6 +34,6 @@ Now lock it down with Cloudflare Access (Zero Trust dashboard → Access → App
        CF_ACCESS_TEAM_DOMAIN=<team>.cloudflareaccess.com
        CF_ACCESS_AUD=<aud tag>
        CF_ACCESS_ALLOWED_EMAILS=you@example.com
-  5. Restart: launchctl kickstart -k gui/\$(id -u)/com.ryanauhl.imessage-assistant
+  5. Restart: launchctl kickstart -k gui/\$(id -u)/com.imessage-assistant.server
 The server rejects any request whose Access JWT does not verify, so the tunnel is useless without Access.
 M

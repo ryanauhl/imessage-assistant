@@ -2,7 +2,10 @@
   "name": "imessage-assistant",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["server", "web"],
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "scripts": {
     "dev": "npm run dev --workspace=server & npm run dev --workspace=web; wait",
     "build": "npm run build --workspace=web && npm run build --workspace=server",
@@ -10,5 +13,12 @@
     "start": "node server/dist/index.js",
     "doctor": "node server/dist/doctor.js",
     "test": "npm test --workspace=server"
-  }
+  },
+  "description": "Read and send iMessage, SMS and RCS from any device, self-hosted on your own Mac over Tailscale or Cloudflare Access.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ryanauhl/imessage-assistant.git"
+  },
+  "author": "Ryan Auhl"
 }

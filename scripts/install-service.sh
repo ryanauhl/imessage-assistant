@@ -3,7 +3,8 @@
 # Copies the node binary to a stable path so Full Disk Access survives Homebrew upgrades.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-LABEL="com.ryanauhl.imessage-assistant"
+LABEL="${SERVICE_LABEL:-com.imessage-assistant.server}"
+LEGACY_LABEL="com.ryanauhl.imessage-assistant"
 DATA_DIR="${DATA_DIR:-$HOME/Library/Application Support/imessage-assistant}"
 BIN_DIR="$DATA_DIR/bin"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
@@ -51,6 +52,11 @@ cat > "$PLIST" <<PL
 PL
 
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+# Remove an agent from before the label was genericised, so only one copy runs.
+if [ "$LABEL" != "$LEGACY_LABEL" ]; then
+  launchctl bootout "gui/$(id -u)/$LEGACY_LABEL" 2>/dev/null || true
+  rm -f "$HOME/Library/LaunchAgents/$LEGACY_LABEL.plist"
+fi
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 launchctl kickstart -k "gui/$(id -u)/$LABEL"
 sleep 2

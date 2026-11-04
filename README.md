@@ -1,15 +1,16 @@
 # imessage-assistant
 
-Read and send your iMessage, SMS and RCS conversations from any device, served from your own Mac.
+Read and send your iMessage, SMS and RCS conversations from any device including Android and Windows as web apps, served from your own Mac.
 
 The Mac does the work, because only the signed-in Messages.app can actually send. A small Node
 service reads the local Messages database, drives Messages.app for sending, and serves a web app.
 It binds to loopback only and is reachable exclusively over your Tailscale tailnet or a Cloudflare
-Access tunnel. Nothing is sent to a third party, and there is no hosted component.
+Access tunnel. I run this within my Tailnet with Tailscale serve to give it a SSL certificate. 
+Nothing is sent to a third party, and there is no hosted component.
 
 > ### Status: personal project
 >
-> I built this for myself, in my own home, against my own Mac. It is shared in case it is useful or
+> Setting expectations: I built this for myself, in my own home, against my own Mac. It is shared in case it is useful or
 > interesting, **not** as a product.
 >
 > - **No guarantee of maintenance.** I may never fix an issue or merge a pull request.
@@ -27,7 +28,7 @@ Access tunnel. Nothing is sent to a third party, and there is no hosted componen
   A headless Mac mini is the intended shape.
 - macOS 26 or later. Developed and tested against macOS 27.
 - Node 24 or later, for the built-in `node:sqlite` module. No native build step.
-- Tailscale, or a Cloudflare account with a domain, to reach it from elsewhere.
+- Tailscale, or a Cloudflare account with a domain, to reach it from elsewhere, otherwise it's limited to localhost.
 
 ## What works
 
@@ -50,9 +51,11 @@ Access tunnel. Nothing is sent to a third party, and there is no hosted componen
 
 These are real and unlikely to change without the Private API:
 
-- **Sending tapbacks and replying in a thread** is not possible through AppleScript. Reading them is.
+- **Sending tapbacks and replying in a thread** is not possible through AppleScript. Reading them is. 
+  I didn't want to disable SIP on the machine that's hosting.
 - **Group chats that moved from iMessage to RCS** still send as iMessage. The app detects this and
-  refuses rather than sending on the wrong transport. See [Groups](#groups).
+  refuses rather than sending on the wrong transport. See [Groups](#groups). You'll need to send messages
+  from your Mac for it to pick up that it has changed to RCS or SMS.
 - **Marking read** works for one-to-one chats only, and brings Messages.app to the front each time.
 - **Marking unread**, creating group chats, and renaming or changing members all need the Private API.
 - Everything depends on the Mac being awake, unlocked and signed in to iMessage.
@@ -107,7 +110,8 @@ and `web/dist` are gitignored, so the service keeps running the previously compi
 rebuild. Use `scripts/deploy.sh --no-pull` to rebuild and restart after local edits.
 
 Nothing else on the Mac is touched: the app lives in the repo + its own data dir, listens on loopback,
-and only reads chat.db. Staged uploads live in the data dir `outbox/` and are pruned after 24 h.
+and only reads chat.db. Outgoing attachments are staged in `~/Library/Messages/imessage-assistant-outbox/`
+(see [Attachments](#attachments-important)) and pruned after 6 hours.
 
 ### 3a. Expose via Tailscale (recommended)
 
@@ -242,39 +246,29 @@ Caveats worth knowing before you enable it:
 - Marking a conversation *unread* still requires the Private API.
 - Set `MARK_READ_METHOD=off` to disable, or `private-api` to require the Private API instead.
 
-## Tapbacks, reply-in-thread, mark-as-read (optional Private API)
+## Tapbacks, reply-in-thread, mark-as-read (Private API) — UNTESTED
 
-Apple provides no public API for sending tapbacks, replying in a thread, marking read or unread,
-or managing group membership. AppleScript can only send text and files. The only known way to do
-those is a helper that calls into Messages.app's internal functions.
+Apple provides no public API for these; AppleScript can only send text/files. A proposed approach is
+BlueBubbles' Private API helper, which injects into Messages.app (requires SIP fully disabled —
+read their docs and decide if that's acceptable for you):
+https://docs.bluebubbles.app/private-api/installation
 
-[BlueBubbles Server](https://github.com/BlueBubblesApp/bluebubbles-server) (Apache-2.0) provides
-one, and this project can talk to it. **This is entirely optional.** Nothing here depends on
-BlueBubbles: without it those features report `501` and everything else works normally.
+[BlueBubbles Server](https://github.com/BlueBubblesApp/bluebubbles-server) is Apache-2.0, and this
+integration is entirely optional — without it those features return `501` and everything else works
+normally. No BlueBubbles code is included, vendored or linked here; this is only an HTTP client for
+a service you would run yourself. Their docs liken disabling SIP to jailbreaking, disclaim
+responsibility for any damage, and note that on Apple Silicon it also stops your Mac running iOS
+apps. I don't run it, so the adapter below has never been exercised against a live instance.
 
-> **Read their documentation before you consider this.** Their Private API requires **fully
-> disabling System Integrity Protection** with `csrutil disable` from Recovery, and it injects a
-> helper into Messages.app. Their own docs compare it to jailbreaking, disclaim responsibility for
-> any damage, and note that on Apple Silicon disabling SIP also stops your Mac running iOS apps.
-> That is a serious reduction in your Mac's security posture. I do not run it, and I am not
-> recommending it — I am documenting that the hook exists.
->
-> Setup instructions are theirs, not mine: https://docs.bluebubbles.app/private-api/installation
-
-If you do run it, point this server at it:
+Once BlueBubbles Server runs on this Mac with Private API enabled, add to `.env`:
 
 ```
 BLUEBUBBLES_URL=http://127.0.0.1:1234
 BLUEBUBBLES_PASSWORD=<its server password>
 ```
 
-Capabilities then flip on automatically, visible at `GET /api/me`. You do not need the BlueBubbles
-client app; this only calls its local REST API.
-
-**Caveat: this adapter is untested.** `server/src/privateapi.ts` is written against their documented
-endpoints but has never been exercised against a running instance, because I have never enabled it.
-Treat it as a starting point, and expect to fix things. No BlueBubbles code is included, vendored or
-linked here; it is an HTTP client for a service you would run yourself.
+The capabilities should flip on automatically (`GET /api/me` → `capabilities`). You don't need to use the
+BlueBubbles client; this app just calls its local REST API for those operations.
 
 ## Development
 
@@ -313,5 +307,5 @@ This is an independent project with no connection to Apple Inc. iMessage, Messag
 trademarks of Apple Inc. It relies on undocumented behaviour of Messages.app and local file formats
 that Apple is free to change at any time.
 
-It is also unaffiliated with and unendorsed by the BlueBubbles project. BlueBubbles is named only to
-describe an optional integration; no BlueBubbles code is distributed here.
+It is also unaffiliated with and unendorsed by the BlueBubbles project, which is named here only to
+describe an optional integration.

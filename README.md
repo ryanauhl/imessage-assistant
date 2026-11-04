@@ -1,9 +1,33 @@
 # imessage-assistant
 
-A self-hosted web client for iMessage / SMS / RCS that runs on your Mac and is reachable from any
-device on your Tailscale tailnet (or through Cloudflare Access). The Mac does all the work because
-Apple only lets the signed-in Messages.app send messages; the server binds to `127.0.0.1` only and
-is exposed exclusively through Tailscale Serve or a Cloudflare Tunnel.
+Read and send your iMessage, SMS and RCS conversations from any device, served from your own Mac.
+
+The Mac does the work, because only the signed-in Messages.app can actually send. A small Node
+service reads the local Messages database, drives Messages.app for sending, and serves a web app.
+It binds to loopback only and is reachable exclusively over your Tailscale tailnet or a Cloudflare
+Access tunnel. Nothing is sent to a third party, and there is no hosted component.
+
+> ### Status: personal project
+>
+> I built this for myself, in my own home, against my own Mac. It is shared in case it is useful or
+> interesting, **not** as a product.
+>
+> - **No guarantee of maintenance.** I may never fix an issue or merge a pull request.
+> - **No support.** Issues may go unanswered. Please do not expect a response.
+> - **No stability promises.** It leans on undocumented Messages behaviour and Apple can break it
+>   with any macOS update. Several parts already work only on specific macOS versions.
+> - **Use at your own risk.** It touches your private messages and automates your Mac. Read the
+>   permissions section before installing, and read the code if you are at all unsure.
+>
+> Forks are welcome and probably wiser than waiting on me. See [Licence](#licence).
+
+## Requirements
+
+- A Mac signed in to iMessage that stays awake, ideally one you are not using for anything else.
+  A headless Mac mini is the intended shape.
+- macOS 26 or later. Developed and tested against macOS 27.
+- Node 24 or later, for the built-in `node:sqlite` module. No native build step.
+- Tailscale, or a Cloudflare account with a domain, to reach it from elsewhere.
 
 ## What works
 
@@ -11,22 +35,39 @@ is exposed exclusively through Tailscale Serve or a Cloudflare Tunnel.
 |---|---|---|
 | Read all conversations, groups, unread counts, read/delivered receipts | reads `~/Library/Messages/chat.db` (read-only) | needs Full Disk Access |
 | Correct iMessage / SMS / RCS labels | derived from recent messages, not `chat.service_name` | the chat row records handle capability, not the thread |
-| Mark one-to-one chats read, syncing to iPhone | Accessibility automation of Messages.app | needs a permission grant, not a SIP change; groups unsupported |
-| Live updates | watches chat.db WAL, pushes over WebSocket | ~1 s latency |
-| Send text to any existing iMessage / SMS / RCS chat (1:1 and group) | AppleScript → Messages.app | RCS routing for 1:1 only, see below |
-| Send files / images (drag, pick, paste) | AppleScript → Messages.app | |
-| Start a new 1:1 conversation (iMessage or SMS) | AppleScript | SMS needs Text Message Forwarding |
-| View attachments (HEIC auto-converted), videos, audio | served from Attachments dir | |
-| Tapbacks shown on messages, reply-in-thread quotes, thread view | from chat.db | |
-| Contact names | reads local AddressBook stores | same FDA grant |
-| Search | `message.text` LIKE | |
-| Pin conversations | stored in the browser | Pinned section at top of the list |
-| Resizable conversation list | drag the divider, double-click to reset | width saved per browser |
-| Keyboard shortcuts | Ctrl+N new, Ctrl+F search, Ctrl+[ / Ctrl+] previous/next chat, Esc closes | ⌘ also works on macOS |
-| Install as an app (PWA) + push notifications + unread badge | manifest + service worker + Web Push | see below |
-| **Send tapbacks, reply in thread, mark groups read / mark unread, create groups, rename / add / remove** | **Private API via BlueBubbles helper (optional)** | Apple has no public API for these; see below |
+| Live updates | watches the chat.db WAL, pushes over WebSocket | about one second |
+| Send text to an existing chat, one-to-one or group | AppleScript to Messages.app | RCS routing for one-to-one only, see below |
+| Send files, images, drag, paste | AppleScript to Messages.app | staging path matters, see below |
+| Start a new one-to-one conversation | AppleScript | SMS needs Text Message Forwarding |
+| View attachments, HEIC converted, video, audio | served from the Attachments directory | |
+| Tapbacks, reply quoting, thread view | read from chat.db | sending them needs the Private API |
+| Contact names and search | local AddressBook stores | same Full Disk Access grant |
+| Pin conversations, resizable list, keyboard shortcuts | stored per browser | Ctrl+N, Ctrl+F, Ctrl+[ / Ctrl+], Esc |
+| Install as an app, push notifications, unread badge | PWA with Web Push | works on Windows, macOS, iOS |
+| Mark one-to-one chats read, syncing to your phone | Accessibility automation of Messages.app | a permission grant, not a SIP change |
 
-Without the Private API those buttons are shown disabled with an explanation; everything else works.
+### Known limitations
+
+These are real and unlikely to change without the Private API:
+
+- **Sending tapbacks and replying in a thread** is not possible through AppleScript. Reading them is.
+- **Group chats that moved from iMessage to RCS** still send as iMessage. The app detects this and
+  refuses rather than sending on the wrong transport. See [Groups](#groups).
+- **Marking read** works for one-to-one chats only, and brings Messages.app to the front each time.
+- **Marking unread**, creating group chats, and renaming or changing members all need the Private API.
+- Everything depends on the Mac being awake, unlocked and signed in to iMessage.
+
+## Security and privacy
+
+- Your messages never leave your machine. There is no server component anywhere else.
+- The service binds to `127.0.0.1` and is never exposed on your LAN.
+- Over Tailscale, identity comes from the headers `tailscale serve` injects, trusted only on loopback
+  and only for logins you allow-list. Over Cloudflare, every request must carry a valid Access JWT
+  verified against Cloudflare's JWKS.
+- An optional `APP_TOKEN` adds a shared secret on top of either.
+- It needs Full Disk Access to read the Messages database, Automation to drive Messages.app, and
+  optionally Accessibility to mark chats read. Those are broad permissions. Granting them to any
+  program, including this one, deserves a look at the source first.
 
 ## Install (5 minutes)
 
@@ -53,12 +94,12 @@ npm run doctor           # checks FDA, Messages automation, Private API, tailsca
 ### 2. Run as a service (isolated, auto-restart, starts at login)
 
 ```bash
-scripts/install-service.sh        # launchd agent com.ryanauhl.imessage-assistant
+scripts/install-service.sh        # launchd agent com.imessage-assistant.server
 scripts/uninstall-service.sh      # remove
 ```
 
 Logs: `~/Library/Application Support/imessage-assistant/logs/`. Restart after `.env` changes:
-`launchctl kickstart -k gui/$(id -u)/com.ryanauhl.imessage-assistant`.
+`launchctl kickstart -k gui/$(id -u)/com.imessage-assistant.server`.
 
 **Updating:** `scripts/deploy.sh` pulls, installs, builds, restarts the service and waits for the
 health check, printing the commit it ended up on. `git pull` on its own is never enough — `server/dist`
@@ -190,7 +231,7 @@ Setup: add the server's node binary to System Settings > Privacy & Security > Ac
 ```
 
 The service must be restarted afterwards, since the permission is read at process start:
-`launchctl kickstart -k gui/$(id -u)/com.ryanauhl.imessage-assistant`.
+`launchctl kickstart -k gui/$(id -u)/com.imessage-assistant.server`.
 
 Caveats worth knowing before you enable it:
 
@@ -241,3 +282,16 @@ Key files: `server/src/queries.ts` (chat.db schema mapping), `server/src/sender.
 - **Attachment "(not available)"** — the file isn't downloaded on this Mac yet; open it in Messages.app once.
 - **New group chat** — needs Private API; otherwise start the group from iPhone/Mac and it appears here.
 - **Tailscale 401** — `TAILSCALE_ALLOWED_LOGINS` must match the login shown by `tailscale status`.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE). You are free to use, modify, fork, redistribute and sell this, with or
+without changes. The only conditions are that the copyright notice travels with it, and that you
+accept it comes with **no warranty of any kind**. Given what it touches, that disclaimer is the part
+that matters most.
+
+## Not affiliated with Apple
+
+This is an independent project with no connection to Apple Inc. iMessage, Messages and macOS are
+trademarks of Apple Inc. It relies on undocumented behaviour of Messages.app and local file formats
+that Apple is free to change at any time.

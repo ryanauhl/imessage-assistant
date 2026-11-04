@@ -31,6 +31,20 @@ main() {
   PORT="${PORT:-3777}"
 
   if [ "${1:-}" != "--no-pull" ]; then
+    # npm rewrites package-lock.json, and once an incoming commit also touches it the pull is
+    # refused, which deadlocks the very update that would stop npm rewriting it. The lockfile is
+    # generated and tracked, so the committed copy is authoritative: discard ours and move on.
+    dirty="$(git status --porcelain)"
+    if [ -n "$dirty" ]; then
+      if [ "$dirty" = " M package-lock.json" ]; then
+        echo "==> discarding locally regenerated package-lock.json"
+        git checkout -- package-lock.json
+      else
+        echo "Local changes would be overwritten by the pull. Commit or stash them first:" >&2
+        git status --short >&2
+        exit 1
+      fi
+    fi
     echo "==> git pull"
     git pull --ff-only
   fi
